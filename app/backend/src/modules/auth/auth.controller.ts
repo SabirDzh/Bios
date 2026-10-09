@@ -1,69 +1,62 @@
 import {
-  Controller,
-  Post,
-  Get,
-  HttpCode,
   Body,
-  Req,
+  Controller,
+  HttpCode,
+  Post,
   Res,
   UseGuards,
+  Inject,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { User } from '../../common/decorators/user.decorator';
 import { AuthService } from './auth.service';
 import { AuthLoginDto } from './dto/auth-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { JwtRefreshTokenGuard } from './guards/jwt-refresh-token.guard';
+import { RefreshTokenCookie } from './decorators/refresh-token.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
+import { AUTH_CONFIG, type AuthConfig } from './auth.config';
+import { clearPairCookies, setPairCookies } from './auth-cookies';
+
+// Брутфорс-защита: 10 попыток в минуту на точку (глобально 120/min).
+const AUTH_THROTTLE = { default: { limit: 10, ttl: 60000 } };
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly service: AuthService) {}
+  constructor(
+    private readonly service: AuthService,
+    @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
+  ) {}
+
   @Post()
   @HttpCode(200)
+  @Throttle(AUTH_THROTTLE)
   async login(
     @Body() authLoginDto: AuthLoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { refreshToken, accessToken } = await this.service.login(
-      authLoginDto,
-    );
-    res.cookie('refresh_token', refreshToken, {
-      maxAge: 1000 * 60 * 60 * 7,
-      httpOnly: true,
-    });
-    res.cookie('access_token', accessToken, {
-      maxAge: 1000 * 60 * 10,
-      httpOnly: true,
-    });
+    const pair = await this.service.login(authLoginDto);
+    setPairCookies(res, this.config, pair);
   }
 
-  @Get('refresh')
-  async refreshAccessToken(
-    @Req() req: Request,
+  @Post('refresh')
+  @Throttle(AUTH_THROTTLE)
+  async refreshTokens(
+    @RefreshTokenCookie() refreshToken: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const cookies = req.cookies ?? req.signedCookies;
-    const refreshToken = cookies.refresh_token;
-    if (!cookies.access_token) {
-      const accessToken = await this.service.updateAccessToken(refreshToken);
-      res.cookie('access_token', accessToken, {
-        maxAge: 1000 * 60 * 10,
-        httpOnly: true,
-      });
-    }
+    const pair = await this.service.refresh(refreshToken);
+    setPairCookies(res, this.config, pair);
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard, JwtRefreshTokenGuard)
+  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   async logout(
     @User() user: JwtUserPayload,
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.service.logout(user.userId);
-    // Clear cookies
-    res.cookie('access_token', null);
-    res.cookie('refresh_token', null);
+    await this.service.logout(user);
+    clearPairCookies(res, this.config);
   }
 }

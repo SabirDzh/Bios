@@ -9,6 +9,7 @@ import * as argon2 from 'argon2';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { TokensService } from '../tokens/tokens.service';
+import { SessionsService } from '../sessions/sessions.service';
 import { TokenType, User } from '@prisma/client';
 import { RecoveryPasswordDto } from './dto/recovery-password.dto';
 
@@ -17,7 +18,8 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private tokensService: TokensService,
-  ) { }
+    private sessionsService: SessionsService,
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
     // Defense in depth: DTO уже lowercas'ит, но нормализуем и тут
@@ -36,7 +38,8 @@ export class UsersService {
     const token = await this.tokensService.create(user.id, TokenType.CONFIRM);
     this.sendConfirmationMail(user.email, token.id);
 
-    const { password: _, ...userWithoutPassword } = user;
+    const { password: _password, ...userWithoutPassword } = user;
+    void _password;
 
     return userWithoutPassword;
   }
@@ -51,12 +54,16 @@ export class UsersService {
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
-      data: { password: hashedPassword, refreshToken: null },
+      data: { password: hashedPassword },
     });
 
     if (!updatedUser) throw new BadRequestException();
 
-    const { password: _p, refreshToken: _r, ...updatedUserSafe } = updatedUser;
+    // Смена пароля отзывает все сессии пользователя.
+    await this.sessionsService.revokeAllForUser(id);
+
+    const { password: _oldPassword, ...updatedUserSafe } = updatedUser;
+    void _oldPassword;
 
     return updatedUserSafe;
   }
@@ -77,29 +84,30 @@ export class UsersService {
     return user;
   }
 
-  async setRefreshToken(id: string, refreshToken: string | null) {
-    // Hash the token to prevent user impersonation in a possible database leak
-    if (refreshToken) refreshToken = await argon2.hash(refreshToken);
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: { refreshToken },
-    });
-    if (!user) throw new NotFoundException();
-    return user;
-  }
-
   async findTokenById(recoveryId: string, type: TokenType) {
     const token = await this.tokensService.findOne(recoveryId);
     if (!token || token.type !== type) throw new NotFoundException();
+    if (token.expiresAt <= new Date()) {
+      // Просроченный одноразовый токен удаляем и отвечаем как на несуществующий.
+      await this.tokensService.remove(recoveryId).catch(() => undefined);
+      throw new NotFoundException();
+    }
 
     return token;
   }
 
   async requestRecovery(email: string) {
-    const user = await this.findByEmail(email);
-    const token = await this.tokensService.create(user.id, TokenType.RECOVERY);
+    try {
+      const user = await this.findByEmail(email);
+      const token = await this.tokensService.create(
+        user.id,
+        TokenType.RECOVERY,
+      );
 
-    this.sendRecoveryMail(user.email, token.id);
+      this.sendRecoveryMail(user.email, token.id);
+    } catch {
+      // Не раскрываем, существует ли email: ответ всегда одинаковый.
+    }
     return {
       message: 'Recovery email have been send',
     };
@@ -125,6 +133,8 @@ export class UsersService {
         },
       }),
       this.tokensService.remove(recoveryId),
+      // Восстановление пароля отзывает все сессии пользователя.
+      this.sessionsService.revokeAllForUser(user.id),
     ]);
 
     return { message: 'Password recovery successfully.' };
@@ -145,9 +155,9 @@ export class UsersService {
     return { message: 'User confirmed successfully.' };
   }
 
-  private async sendConfirmationMail(email: string, tokenId: string) { }
+  private async sendConfirmationMail(email: string, tokenId: string) {}
 
-  private async sendRecoveryMail(email: string, tokenId: string) { }
+  private async sendRecoveryMail(email: string, tokenId: string) {}
 
   async validateHash(content: string, hash: string) {
     try {
