@@ -7,9 +7,10 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { IsNotReservedUsername } from '../../../common/validators/reserved-username.validator';
+import { IsNotDisposableEmail } from '../../../common/validators/disposable-email.validator';
 
 export class CreateUserDto {
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
@@ -22,7 +23,7 @@ export class CreateUserDto {
   @IsNotReservedUsername()
   username: string;
 
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
@@ -32,6 +33,7 @@ export class CreateUserDto {
   @Matches(/^\S+@\S+\.\S+$/, {
     message: 'email must contain @ and .',
   })
+  @IsNotDisposableEmail()
   email: string;
 
   @IsString()
