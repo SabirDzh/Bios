@@ -1,6 +1,6 @@
-import { IsMongoId } from 'class-validator';
+import { IsUUID } from 'class-validator';
 
 export class FindRecoveryByIdDto {
-  @IsMongoId()
+  @IsUUID('7')
   recoveryId: string;
 }

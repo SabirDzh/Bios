@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import * as bcrypt from 'bcryptjs';
+import * as argon2 from 'argon2';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { TokensService } from '../tokens/tokens.service';
@@ -20,8 +20,13 @@ export class UsersService {
   ) { }
 
   async create(createUserDto: CreateUserDto) {
-    const data = createUserDto;
-    data.password = await bcrypt.hash(data.password, 8);
+    // Defense in depth: DTO уже lowercas'ит, но нормализуем и тут
+    // (сервис могут вызвать в обход ValidationPipe).
+    const data = {
+      username: createUserDto.username.trim().toLowerCase(),
+      email: createUserDto.email.trim().toLowerCase(),
+      password: await argon2.hash(createUserDto.password),
+    };
     let user: User;
     try {
       user = await this.prisma.user.create({ data });
@@ -42,7 +47,7 @@ export class UsersService {
 
     const passwordMatches = await this.validateHash(password, user.password);
     if (!passwordMatches) throw new ForbiddenException();
-    const hashedPassword = await bcrypt.hash(newPassword, 8);
+    const hashedPassword = await argon2.hash(newPassword);
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
@@ -64,7 +69,9 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+    });
     if (!user) throw new NotFoundException();
 
     return user;
@@ -72,7 +79,7 @@ export class UsersService {
 
   async setRefreshToken(id: string, refreshToken: string | null) {
     // Hash the token to prevent user impersonation in a possible database leak
-    if (refreshToken) refreshToken = await bcrypt.hash(refreshToken, 8);
+    if (refreshToken) refreshToken = await argon2.hash(refreshToken);
     const user = await this.prisma.user.update({
       where: { id },
       data: { refreshToken },
@@ -92,7 +99,7 @@ export class UsersService {
     const user = await this.findByEmail(email);
     const token = await this.tokensService.create(user.id, TokenType.RECOVERY);
 
-    this.sendRecoveryMail(email, token.id);
+    this.sendRecoveryMail(user.email, token.id);
     return {
       message: 'Recovery email have been send',
     };
@@ -108,7 +115,7 @@ export class UsersService {
 
     const token = await this.findTokenById(recoveryId, TokenType.RECOVERY);
     const user = await this.findById(token.userId);
-    const hashedPassword = await bcrypt.hash(password, 8);
+    const hashedPassword = await argon2.hash(password);
 
     await Promise.all([
       this.prisma.user.update({
@@ -143,6 +150,10 @@ export class UsersService {
   private async sendRecoveryMail(email: string, tokenId: string) { }
 
   async validateHash(content: string, hash: string) {
-    return await bcrypt.compare(content, hash);
+    try {
+      return await argon2.verify(hash, content);
+    } catch {
+      return false;
+    }
   }
 }

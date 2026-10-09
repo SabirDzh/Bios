@@ -1,6 +1,6 @@
-import { IsMongoId } from 'class-validator';
+import { IsUUID } from 'class-validator';
 
 export class FindConfirmationByIdDto {
-  @IsMongoId()
+  @IsUUID('7')
   confirmationId: string;
 }
