@@ -20,6 +20,8 @@ model User {
   createdAt       DateTime         @default(now()) @db.Timestamptz(3)
   tokens          Token[]
   refreshSessions RefreshSession[]
+  members         WorkspaceMember[]
+  sentInvitations WorkspaceInvitation[] @relation("SentInvitations")
 }
 
 model Token {
@@ -60,4 +62,53 @@ enum RefreshSessionStatus {
   ACTIVE
   USED
   REVOKED
+}
+
+model Workspace {
+  id          String               @id @default(uuid(7))
+  name        String
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+  members     WorkspaceMember[]
+  invitations WorkspaceInvitation[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid(7))
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model WorkspaceInvitation {
+  id          String           @id @default(uuid(7))
+  workspaceId String
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email       String
+  tokenHash   String           @unique
+  status      InvitationStatus @default(PENDING)
+  invitedById String
+  invitedBy   User             @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+  expiresAt   DateTime         @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([workspaceId, status])
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
 }
