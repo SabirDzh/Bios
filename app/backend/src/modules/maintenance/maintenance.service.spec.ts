@@ -1,7 +1,8 @@
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { MaintenanceService } from './maintenance.service';
 
-const TEST_DB_URL = 'postgresql://sabir@localhost:5432/bios_test?schema=public';
+const TEST_DB_URL =
+  'postgresql://sabir@localhost:5432/bios_test_maintenance?schema=public';
 process.env.DATABASE_URL = TEST_DB_URL;
 
 describe('MaintenanceService.purgeExpired', () => {
