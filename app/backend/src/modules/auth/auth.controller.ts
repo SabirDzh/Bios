@@ -1,7 +1,69 @@
-import { Controller } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  HttpCode,
+  Body,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { User } from '../../common/decorators/user.decorator';
 import { AuthService } from './auth.service';
+import { AuthLoginDto } from './dto/auth-login.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtRefreshTokenGuard } from './guards/jwt-refresh-token.guard';
+import type { JwtUserPayload } from '../../common/types/user-payload.type';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly service: AuthService) {}
+  @Post()
+  @HttpCode(200)
+  async login(
+    @Body() authLoginDto: AuthLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { refreshToken, accessToken } = await this.service.login(
+      authLoginDto,
+    );
+    res.cookie('refresh_token', refreshToken, {
+      maxAge: 1000 * 60 * 60 * 7,
+      httpOnly: true,
+    });
+    res.cookie('access_token', accessToken, {
+      maxAge: 1000 * 60 * 10,
+      httpOnly: true,
+    });
+  }
+
+  @Get('refresh')
+  async refreshAccessToken(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookies = req.cookies ?? req.signedCookies;
+    const refreshToken = cookies.refresh_token;
+    if (!cookies.access_token) {
+      const accessToken = await this.service.updateAccessToken(refreshToken);
+      res.cookie('access_token', accessToken, {
+        maxAge: 1000 * 60 * 10,
+        httpOnly: true,
+      });
+    }
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard, JwtRefreshTokenGuard)
+  @HttpCode(200)
+  async logout(
+    @User() user: JwtUserPayload,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.service.logout(user.userId);
+    // Clear cookies
+    res.cookie('access_token', null);
+    res.cookie('refresh_token', null);
+  }
 }
