@@ -8,7 +8,7 @@ import {
 import { Transform } from 'class-transformer';
 
 export class RequestRecoveryDto {
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
