@@ -71,6 +71,7 @@ model Workspace {
   updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
   members     WorkspaceMember[]
   invitations WorkspaceInvitation[]
+  servers     Server[]
 }
 
 model WorkspaceMember {
@@ -111,4 +112,50 @@ enum InvitationStatus {
   ACCEPTED
   REVOKED
   EXPIRED
+}
+
+model Server {
+  id               String            @id @default(uuid(7))
+  workspaceId      String
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name             String
+  host             String
+  port             Int               @default(22)
+  sshUsername      String
+  authType         ServerAuthType
+  secretCipher     String
+  /// Принятый пользователем SHA256-отпечаток host key. NULL = ключ хоста ещё не подтверждён.
+  hostKeyFingerprint String?
+  /// Только доступность SSH-хоста; про Docker и агента — lastAgentStatus/lastAgentErrorCode.
+  status           ServerStatus        @default(PENDING)
+  dockerVersion    String?
+  agentVersion     String?
+  agentInstalledAt DateTime?           @db.Timestamptz(3)
+  lastAgentStatus  AgentReportStatus?
+  lastAgentErrorCode String?
+  lastCheckedAt    DateTime?           @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@unique([workspaceId, name])
+  @@unique([workspaceId, hostKeyFingerprint])
+  @@index([workspaceId])
+}
+
+enum ServerStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+}
+
+enum ServerAuthType {
+  PASSWORD
+  KEY
+}
+
+enum AgentReportStatus {
+  NOT_INSTALLED
+  FAILED
+  STALE
+  ACTIVE
 }
