@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Throttle } from '@nestjs/throttler';
+import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { WorkspacesService } from './workspaces.service';
@@ -41,7 +41,7 @@ export class WorkspacesController {
   }
 
   @Post(':workspaceId/invitations')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ThrottleProfile('invite')
   invite(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,

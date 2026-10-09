@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
@@ -13,13 +13,20 @@ import { ServersModule } from './modules/servers/servers.module';
 import { DeploymentsModule } from './modules/deployments/deployments.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { AppConfigModule } from './config/app-config.module';
+import { APP_CONFIG, type AppConfig } from './config/app.config';
+import { buildThrottlerOptions } from './common/throttle/throttle-options.factory';
 
 @Module({
   imports: [
     AppConfigModule,
-    // Глобальный лимит 120 req/min (in-memory; для нескольких инстансов нужен Redis).
-    // Строгие лимиты на auth-роутах задаются декоратором @Throttle точечно.
-    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 120 }] }),
+    // In-memory хранилище (для нескольких инстансов нужен Redis).
+    // Профили лимитов — из AppConfig; strict-профили действуют только
+    // на роутах с @ThrottleProfile, global — везде (effective = min).
+    ThrottlerModule.forRootAsync({
+      useFactory: (cfg: AppConfig, reflector: Reflector) =>
+        buildThrottlerOptions(cfg, reflector),
+      inject: [APP_CONFIG, Reflector],
+    }),
     ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,

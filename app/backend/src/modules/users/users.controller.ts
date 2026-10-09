@@ -10,7 +10,7 @@ import {
   Param,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Throttle } from '@nestjs/throttler';
+import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { clearPairCookies, isSecureCookies } from '../auth/auth-cookies';
 import { UsersService } from './users.service';
@@ -41,7 +41,7 @@ export class UsersController {
 
   @Post('request-recovery')
   @HttpCode(200)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ThrottleProfile('recovery')
   async requestRecovery(@Body() requestRecoveryDto: RequestRecoveryDto) {
     return await this.service.requestRecovery(requestRecoveryDto.email);
   }

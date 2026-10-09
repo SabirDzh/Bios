@@ -8,7 +8,7 @@ import {
   UseGuards,
   Inject,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import type { Response } from 'express';
 import { User } from '../../common/decorators/user.decorator';
 import { AuthService } from './auth.service';
@@ -21,9 +21,6 @@ import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config';
 import { clearPairCookies, setPairCookies } from './auth-cookies';
 
-// Брутфорс-защита: 10 попыток в минуту на точку (глобально 120/min).
-const AUTH_THROTTLE = { default: { limit: 10, ttl: 60000 } };
-
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -33,14 +30,14 @@ export class AuthController {
   ) {}
 
   @Post('register')
-  @Throttle(AUTH_THROTTLE)
+  @ThrottleProfile('authStrict')
   async register(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
 
   @Post('login')
   @HttpCode(200)
-  @Throttle(AUTH_THROTTLE)
+  @ThrottleProfile('authStrict')
   async login(
     @Body() authLoginDto: AuthLoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -50,7 +47,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @Throttle(AUTH_THROTTLE)
+  @ThrottleProfile('authStrict')
   async refreshTokens(
     @RefreshTokenCookie() refreshToken: string,
     @Res({ passthrough: true }) res: Response,
