@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { CronJob } from 'cron';
 import { AUTH_CONFIG } from '../modules/auth/auth.config';
 import type { AuthConfig } from '../modules/auth/auth.config';
@@ -11,7 +12,30 @@ export interface ThrottleProfileCfg {
   ttlMs: number;
 }
 
-export type ThrottleProfileName = 'authStrict' | 'recovery' | 'invite';
+export type ThrottleProfileName =
+  'authStrict' | 'recovery' | 'invite' | 'sshOps';
+
+export interface SshCfg {
+  connectTimeoutMs: number;
+  commandTimeoutMs: number;
+  installTimeoutMs: number;
+  /** Версия агента, которую панель устанавливает на хост. */
+  agentVersion: string;
+  /** Порог протухания heartbeat: старше — агент считается STALE. */
+  heartbeatStaleSec: number;
+  /** Единственные порты, к которым панели разрешено подключаться. */
+  allowedPorts: number[];
+  /** Разрешить loopback: только локальная разработка и дымовой тест. */
+  allowLoopback: boolean;
+}
+
+export interface CryptoCfg {
+  activeKey: { id: string; key: Buffer };
+  /** Decrypt-only: старые kid переживают ротацию, новым ключом они не шифруются. */
+  oldKeys: Map<string, Buffer>;
+  /** true — ключ сгенерирован эфемерно (только non-production). */
+  ephemeralServerKey: boolean;
+}
 
 export interface AppConfig {
   app: { port: number; isProduction: boolean };
@@ -21,7 +45,10 @@ export interface AppConfig {
     authStrict: ThrottleProfileCfg;
     recovery: ThrottleProfileCfg;
     invite: ThrottleProfileCfg;
+    sshOps: ThrottleProfileCfg;
   };
+  ssh: SshCfg;
+  crypto: CryptoCfg;
   jwt: AuthConfig;
   cookies: {
     accessName: string;
@@ -121,6 +148,130 @@ function parseThrottle(
   };
 }
 
+const KEY_ID_RE = /^[a-z0-9][a-z0-9_-]{0,15}$/;
+
+function decodeKey(raw: string, name: string): Buffer {
+  if (!/^[A-Za-z0-9+/_-]{43,44}={0,2}$/.test(raw)) {
+    throw new Error(`Invalid ${name}: expected base64 of 32 bytes`);
+  }
+  const key = Buffer.from(raw, 'base64');
+  if (key.length !== 32) {
+    throw new Error(`Invalid ${name}: expected 32 bytes, got ${key.length}`);
+  }
+  return key;
+}
+
+/**
+ * Ключ шифрования SSH-креденшелов серверов. Ротация: старый ключ остаётся в
+ * SERVER_CRYPTO_OLD_KEYS (decrypt-only), активный перемалывает cipher при чтении.
+ */
+function parseCrypto(env: NodeJS.ProcessEnv, isProduction: boolean): CryptoCfg {
+  const activeId = env.SERVER_CRYPTO_KEY_ID?.trim() || 'k1';
+  if (!KEY_ID_RE.test(activeId)) {
+    throw new Error(
+      `Invalid SERVER_CRYPTO_KEY_ID="${env.SERVER_CRYPTO_KEY_ID}": expected short slug`,
+    );
+  }
+
+  const oldKeys = new Map<string, Buffer>();
+  for (const entry of (env.SERVER_CRYPTO_OLD_KEYS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
+    const sep = entry.indexOf(':');
+    const kid = sep === -1 ? '' : entry.slice(0, sep);
+    if (!KEY_ID_RE.test(kid)) {
+      throw new Error(
+        `Invalid SERVER_CRYPTO_OLD_KEYS entry "${entry}": expected kid:base64`,
+      );
+    }
+    oldKeys.set(
+      kid,
+      decodeKey(entry.slice(sep + 1), `SERVER_CRYPTO_OLD_KEYS[${kid}]`),
+    );
+  }
+
+  const rawActive = env.SERVER_CRYPTO_KEY?.trim();
+  if (rawActive === undefined || rawActive === '') {
+    if (isProduction) {
+      throw new Error('Missing required SERVER_CRYPTO_KEY in production');
+    }
+    if (oldKeys.size > 0) {
+      throw new Error(
+        'Invalid SERVER_CRYPTO_OLD_KEYS: SERVER_CRYPTO_KEY is required to encrypt new credentials',
+      );
+    }
+    return {
+      activeKey: { id: activeId, key: randomBytes(32) },
+      oldKeys,
+      ephemeralServerKey: true,
+    };
+  }
+  if (oldKeys.has(activeId)) {
+    throw new Error(
+      `SERVER_CRYPTO_KEY_ID "${activeId}" is already present in SERVER_CRYPTO_OLD_KEYS`,
+    );
+  }
+  return {
+    activeKey: { id: activeId, key: decodeKey(rawActive, 'SERVER_CRYPTO_KEY') },
+    oldKeys,
+    ephemeralServerKey: false,
+  };
+}
+
+/** Allowlist портов: одиночные значения и диапазоны через запятую («22, 2200-2202»). */
+function parsePorts(raw: string | undefined): number[] {
+  const value = raw?.trim();
+  if (value === undefined || value === '') return [22];
+  const ports = new Set<number>();
+  for (const token of value.split(',').map((s) => s.trim())) {
+    const range = /^(\d{1,5})-(\d{1,5})$/.exec(token);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      if (from < 1 || to > 65535 || to < from || to - from > 63) {
+        throw new Error(
+          `Invalid SSH_ALLOWED_PORTS range "${token}": expected 1-65535, span <= 64`,
+        );
+      }
+      for (let port = from; port <= to; port += 1) ports.add(port);
+      continue;
+    }
+    const single = Number(token);
+    if (!/^\d{1,5}$/.test(token) || single < 1 || single > 65535) {
+      throw new Error(
+        `Invalid SSH_ALLOWED_PORTS entry "${token}": expected port 1-65535`,
+      );
+    }
+    ports.add(single);
+  }
+  if (ports.size === 0) {
+    throw new Error('Invalid SSH_ALLOWED_PORTS: empty allowlist');
+  }
+  return [...ports].sort((a, b) => a - b);
+}
+
+function parseBoolFlag(
+  raw: string | undefined,
+  name: string,
+  fallback: boolean,
+): boolean {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = raw.trim().toLowerCase();
+  if (value !== 'true' && value !== 'false') {
+    throw new Error(`Invalid ${name}="${raw}": expected true or false`);
+  }
+  return value === 'true';
+}
+
+function parseAgentVersion(raw: string | undefined): string {
+  const value = raw ?? '0.1.0';
+  if (!/^\d+\.\d+\.\d+$/.test(value)) {
+    throw new Error(`Invalid AGENT_VERSION="${raw}": expected x.y.z`);
+  }
+  return value;
+}
+
 function parseSameSite(raw: string | undefined): 'lax' | 'strict' | 'none' {
   const value = (raw ?? 'lax').toLowerCase();
   if (value !== 'lax' && value !== 'strict' && value !== 'none') {
@@ -192,6 +343,43 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error('Invalid COOKIE_SAMESITE="none": requires Secure cookies');
   }
 
+  const allowLoopback = parseBoolFlag(
+    env.SSH_ALLOW_LOOPBACK,
+    'SSH_ALLOW_LOOPBACK',
+    false,
+  );
+  if (allowLoopback && isProduction) {
+    throw new Error(
+      'Invalid SSH_ALLOW_LOOPBACK="true": loopback targets are not allowed in production',
+    );
+  }
+
+  const ssh: SshCfg = {
+    connectTimeoutMs: positiveInt(
+      env.SSH_CONNECT_TIMEOUT_MS,
+      'SSH_CONNECT_TIMEOUT_MS',
+      { min: 1, max: 60000, fallback: 10000 },
+    ),
+    commandTimeoutMs: positiveInt(
+      env.SSH_COMMAND_TIMEOUT_MS,
+      'SSH_COMMAND_TIMEOUT_MS',
+      { min: 1, max: 120000, fallback: 15000 },
+    ),
+    installTimeoutMs: positiveInt(
+      env.SSH_INSTALL_TIMEOUT_MS,
+      'SSH_INSTALL_TIMEOUT_MS',
+      { min: 1, max: 300000, fallback: 60000 },
+    ),
+    agentVersion: parseAgentVersion(env.AGENT_VERSION),
+    heartbeatStaleSec: positiveInt(
+      env.AGENT_HEARTBEAT_STALE_SEC,
+      'AGENT_HEARTBEAT_STALE_SEC',
+      { min: 10, max: 3600, fallback: 60 },
+    ),
+    allowedPorts: parsePorts(env.SSH_ALLOWED_PORTS),
+    allowLoopback,
+  };
+
   return {
     app: { port, isProduction },
     cors: { origins: parseOrigins(env.CORS_ORIGINS, isProduction) },
@@ -212,7 +400,13 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         limit: 30,
         ttlMs: 60000,
       }),
+      sshOps: parseThrottle(env, 'THROTTLE_SSH_OPS', {
+        limit: 6,
+        ttlMs: 60000,
+      }),
     },
+    ssh,
+    crypto: parseCrypto(env, isProduction),
     jwt,
     cookies: {
       accessName: env.COOKIE_ACCESS_NAME || 'access_token',

@@ -33,6 +33,13 @@ services:
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       EMAIL_VERIFY_MX: ${EMAIL_VERIFY_MX:-true}
+      SERVER_CRYPTO_KEY: ${SERVER_CRYPTO_KEY:?set SERVER_CRYPTO_KEY env}
+      SERVER_CRYPTO_KEY_ID: ${SERVER_CRYPTO_KEY_ID:-k1}
+      SERVER_CRYPTO_OLD_KEYS: ${SERVER_CRYPTO_OLD_KEYS:-}
+      SSH_ALLOWED_PORTS: ${SSH_ALLOWED_PORTS:-22}
+      SSH_ALLOW_LOOPBACK: ${SSH_ALLOW_LOOPBACK:-false}
+      AGENT_VERSION: ${AGENT_VERSION:-0.1.0}
+      THROTTLE_SSH_OPS_LIMIT: ${THROTTLE_SSH_OPS_LIMIT:-6}
     secrets:
       - jwt_private_key
       - jwt_public_key

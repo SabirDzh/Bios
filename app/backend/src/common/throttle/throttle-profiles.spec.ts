@@ -5,10 +5,14 @@ import { ThrottleProfile } from './throttle-profile.decorator';
 import { buildThrottlerOptions } from './throttle-options.factory';
 
 class Dummy {
+  // `this: void` — методы отдаются ctxFor() вне объекта, правилу нужен этот контракт.
   @ThrottleProfile('authStrict')
-  strict() {}
+  strict(this: void) {}
 
-  plain() {}
+  @ThrottleProfile('sshOps')
+  ssh(this: void) {}
+
+  plain(this: void) {}
 }
 
 describe('buildThrottlerOptions', () => {
@@ -18,6 +22,7 @@ describe('buildThrottlerOptions', () => {
       authStrict: { limit: 10, ttlMs: 60000 },
       recovery: { limit: 5, ttlMs: 60000 },
       invite: { limit: 30, ttlMs: 60000 },
+      sshOps: { limit: 6, ttlMs: 60000 },
     },
   } as AppConfig;
   const reflector = new Reflector();
@@ -29,13 +34,14 @@ describe('buildThrottlerOptions', () => {
     } as ExecutionContext;
   }
 
-  test('builds 4 named throttlers with config values (ttlMs -> ttl)', () => {
+  test('builds 5 named throttlers with config values (ttlMs -> ttl)', () => {
     const { throttlers } = buildThrottlerOptions(cfg, reflector);
     expect(throttlers.map((t) => [t.name, t.limit, t.ttl])).toEqual([
       ['global', 120, 60000],
       ['authStrict', 10, 60000],
       ['recovery', 5, 60000],
       ['invite', 30, 60000],
+      ['sshOps', 6, 60000],
     ]);
   });
 
@@ -45,5 +51,10 @@ describe('buildThrottlerOptions', () => {
     expect(auth).toBeDefined();
     expect(auth?.(ctxFor(Dummy.prototype.strict))).toBe(false);
     expect(auth?.(ctxFor(Dummy.prototype.plain))).toBe(true);
+
+    const sshOps = throttlers.find((t) => t.name === 'sshOps')?.skipIf;
+    expect(sshOps).toBeDefined();
+    expect(sshOps?.(ctxFor(Dummy.prototype.plain))).toBe(true);
+    expect(sshOps?.(ctxFor(Dummy.prototype.ssh))).toBe(false);
   });
 });

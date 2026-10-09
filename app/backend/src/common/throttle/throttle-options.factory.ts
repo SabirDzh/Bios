@@ -53,6 +53,10 @@ export function buildThrottlerOptions(
         skipIf: skipUnless('recovery'),
       },
       { ...entry('invite', cfg.throttle.invite), skipIf: skipUnless('invite') },
+      {
+        ...entry('sshOps', cfg.throttle.sshOps),
+        skipIf: skipUnless('sshOps'),
+      },
     ],
   };
 }

@@ -86,6 +86,8 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       withKeys({
         NODE_ENV: 'production',
         CORS_ORIGINS: 'https://app.example.com',
+        // Production требует и ключ шифрования серверов: здесь он не предмет теста.
+        SERVER_CRYPTO_KEY: Buffer.alloc(32, 7).toString('base64'),
       }),
     );
     expect(prod.app.isProduction).toBe(true);
@@ -121,5 +123,134 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.invitations.ttlSec).toBe(3600);
     expect(cfg.email.extraBlockedDomains).toEqual(['spam.io', 'evil.example']);
     expect(cfg.maintenance.timeZone).toBe('Europe/Moscow');
+  });
+});
+
+describe('ssh, network policy, crypto keys and sshOps', () => {
+  test('defaults', () => {
+    const cfg = loadAppConfig(withKeys());
+    expect(cfg.ssh).toEqual({
+      connectTimeoutMs: 10000,
+      commandTimeoutMs: 15000,
+      installTimeoutMs: 60000,
+      agentVersion: '0.1.0',
+      heartbeatStaleSec: 60,
+      allowedPorts: [22],
+      allowLoopback: false,
+    });
+    expect(cfg.throttle.sshOps).toEqual({ limit: 6, ttlMs: 60000 });
+  });
+
+  test('loopback разрешён только явным флагом', () => {
+    expect(loadAppConfig(withKeys()).ssh.allowLoopback).toBe(false);
+    expect(
+      loadAppConfig(withKeys({ SSH_ALLOW_LOOPBACK: 'true' })).ssh.allowLoopback,
+    ).toBe(true);
+    expect(() =>
+      loadAppConfig(withKeys({ SSH_ALLOW_LOOPBACK: 'yes' })),
+    ).toThrow(/SSH_ALLOW_LOOPBACK/);
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          NODE_ENV: 'production',
+          CORS_ORIGINS: 'https://app.example.com',
+          SERVER_CRYPTO_KEY: Buffer.alloc(32, 7).toString('base64'),
+          SSH_ALLOW_LOOPBACK: 'true',
+        }),
+      ),
+    ).toThrow(/production/);
+  });
+
+  test('allowedPorts принимает списки и диапазоны, отклоняет мусор', () => {
+    expect(
+      loadAppConfig(withKeys({ SSH_ALLOWED_PORTS: '22, 2200-2202' })).ssh
+        .allowedPorts,
+    ).toEqual([22, 2200, 2201, 2202]);
+    expect(() => loadAppConfig(withKeys({ SSH_ALLOWED_PORTS: '0' }))).toThrow(
+      /SSH_ALLOWED_PORTS/,
+    );
+    expect(() =>
+      loadAppConfig(withKeys({ SSH_ALLOWED_PORTS: '70000' })),
+    ).toThrow(/SSH_ALLOWED_PORTS/);
+    expect(() =>
+      loadAppConfig(withKeys({ SSH_ALLOWED_PORTS: '22-20' })),
+    ).toThrow(/SSH_ALLOWED_PORTS/);
+    expect(() =>
+      loadAppConfig(withKeys({ SSH_ALLOWED_PORTS: '1-200' })),
+    ).toThrow(/SSH_ALLOWED_PORTS/);
+  });
+
+  test('production без SERVER_CRYPTO_KEY падает; без ключа — эфемерный с kid k1', () => {
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          NODE_ENV: 'production',
+          CORS_ORIGINS: 'https://app.example.com',
+        }),
+      ),
+    ).toThrow(/SERVER_CRYPTO_KEY/);
+
+    const dev = loadAppConfig(withKeys());
+    expect(dev.crypto.ephemeralServerKey).toBe(true);
+    expect(dev.crypto.activeKey.id).toBe('k1');
+    expect(dev.crypto.activeKey.key.length).toBe(32);
+    expect(dev.crypto.oldKeys.size).toBe(0);
+  });
+
+  test('OLD_KEYS декодируются по kid, кривые записи падают', () => {
+    const a = Buffer.alloc(32, 7).toString('base64');
+    const b = Buffer.alloc(32, 8).toString('base64');
+    const cfg = loadAppConfig(
+      withKeys({
+        SERVER_CRYPTO_KEY: a,
+        SERVER_CRYPTO_KEY_ID: 'k2',
+        SERVER_CRYPTO_OLD_KEYS: `k1:${b}`,
+      }),
+    );
+    expect(cfg.crypto.activeKey.id).toBe('k2');
+    expect(cfg.crypto.activeKey.key).toEqual(Buffer.alloc(32, 7));
+    expect(cfg.crypto.oldKeys.get('k1')).toEqual(Buffer.alloc(32, 8));
+    expect(cfg.crypto.ephemeralServerKey).toBe(false);
+
+    expect(() =>
+      loadAppConfig(
+        withKeys({ SERVER_CRYPTO_KEY: a, SERVER_CRYPTO_OLD_KEYS: 'k1:' + a }),
+      ),
+    ).toThrow(/already present/);
+    expect(() =>
+      loadAppConfig(withKeys({ SERVER_CRYPTO_KEY: 'c2hvcnQ=' })),
+    ).toThrow(/SERVER_CRYPTO_KEY/);
+    expect(() =>
+      loadAppConfig(
+        withKeys({ SERVER_CRYPTO_KEY: a, SERVER_CRYPTO_OLD_KEYS: 'broken' }),
+      ),
+    ).toThrow(/SERVER_CRYPTO_OLD_KEYS/);
+    expect(() =>
+      loadAppConfig(
+        withKeys({ SERVER_CRYPTO_KEY: a, SERVER_CRYPTO_KEY_ID: 'KI' }),
+      ),
+    ).toThrow(/SERVER_CRYPTO_KEY_ID/);
+  });
+
+  test('ssh env overrides применяются, невалидные — throw с именем переменной', () => {
+    const cfg = loadAppConfig(
+      withKeys({
+        SSH_CONNECT_TIMEOUT_MS: '2500',
+        AGENT_VERSION: '1.2.3',
+        THROTTLE_SSH_OPS_LIMIT: '2',
+      }),
+    );
+    expect(cfg.ssh.connectTimeoutMs).toBe(2500);
+    expect(cfg.ssh.agentVersion).toBe('1.2.3');
+    expect(cfg.throttle.sshOps.limit).toBe(2);
+    expect(() => loadAppConfig(withKeys({ AGENT_VERSION: 'v1' }))).toThrow(
+      /AGENT_VERSION/,
+    );
+    expect(() =>
+      loadAppConfig(withKeys({ SSH_INSTALL_TIMEOUT_MS: '0' })),
+    ).toThrow(/SSH_INSTALL_TIMEOUT_MS/);
+    expect(() =>
+      loadAppConfig(withKeys({ AGENT_HEARTBEAT_STALE_SEC: '5' })),
+    ).toThrow(/AGENT_HEARTBEAT_STALE_SEC/);
   });
 });
