@@ -1,7 +1,15 @@
+import { promises as dns } from 'node:dns';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from '../../modules/users/dto/create-user.dto';
-import { isDisposableDomain } from './disposable-email.validator';
+import { hasMxRecords, isDisposableDomain } from './disposable-email.validator';
+
+jest.mock('node:dns', () => ({
+  promises: { resolveMx: jest.fn() },
+}));
+
+const resolveMx = dns.resolveMx as jest.Mock;
+const MX = [{ exchange: 'mail.example.com', priority: 10 }];
 
 async function emailErrors(email: string): Promise<string[]> {
   const dto = plainToInstance(CreateUserDto, {
@@ -15,6 +23,13 @@ async function emailErrors(email: string): Promise<string[]> {
 }
 
 describe('disposable email blocking', () => {
+  beforeEach(() => {
+    resolveMx.mockReset();
+    resolveMx.mockResolvedValue(MX);
+    delete process.env.EMAIL_VERIFY_MX;
+    delete process.env.EMAIL_EXTRA_BLOCKED_DOMAINS;
+  });
+
   test('isDisposableDomain: exact, subdomain, case-insensitive', () => {
     expect(isDisposableDomain('mailinator.com')).toBe(true);
     expect(isDisposableDomain('sub.mailinator.com')).toBe(true);
@@ -48,5 +63,52 @@ describe('disposable email blocking', () => {
     } finally {
       delete process.env.EMAIL_EXTRA_BLOCKED_DOMAINS;
     }
+  });
+});
+
+describe('MX record check', () => {
+  beforeEach(() => {
+    resolveMx.mockReset();
+    delete process.env.EMAIL_VERIFY_MX;
+    delete process.env.EMAIL_MX_TIMEOUT_MS;
+  });
+
+  test('hasMxRecords: true with MX, false without or on DNS error', async () => {
+    resolveMx.mockResolvedValueOnce(MX);
+    await expect(hasMxRecords('gmail.com')).resolves.toBe(true);
+
+    resolveMx.mockResolvedValueOnce([]);
+    await expect(hasMxRecords('gmail.com')).resolves.toBe(false);
+
+    resolveMx.mockRejectedValueOnce(
+      Object.assign(new Error('queryMx ENOTFOUND'), { code: 'ENOTFOUND' }),
+    );
+    await expect(hasMxRecords('nonexistent.invalid')).resolves.toBe(false);
+  });
+
+  test('hasMxRecords: timeout fails closed', async () => {
+    process.env.EMAIL_MX_TIMEOUT_MS = '50';
+    resolveMx.mockImplementationOnce(() => new Promise(() => undefined));
+    await expect(hasMxRecords('slow.example.com')).resolves.toBe(false);
+    expect(resolveMx).toHaveBeenCalledWith('slow.example.com');
+  });
+
+  test('domain without MX is rejected on registration (fail closed)', async () => {
+    resolveMx.mockResolvedValue([]);
+    expect(await emailErrors('user@gmail.con')).toContain(
+      'email domain must accept mail (MX record not found)',
+    );
+  });
+
+  test('EMAIL_VERIFY_MX=false disables the check', async () => {
+    process.env.EMAIL_VERIFY_MX = 'false';
+    resolveMx.mockRejectedValue(new Error('offline'));
+    const dto = plainToInstance(CreateUserDto, {
+      username: 'validname',
+      email: 'user@gmail.com',
+      password: 'secret123',
+    });
+    const errors = await validate(dto);
+    expect(errors.find((e) => e.property === 'email')).toBeUndefined();
   });
 });

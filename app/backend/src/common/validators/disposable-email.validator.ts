@@ -40,27 +40,49 @@ export function isDisposableDomain(domain: string): boolean {
   return false;
 }
 
-async function hasMxRecords(domain: string): Promise<boolean> {
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const records = await dns.resolveMx(domain);
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('DNS timeout')), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function mxTimeoutMs(): number {
+  const raw = Number(process.env.EMAIL_MX_TIMEOUT_MS ?? 3000);
+  return Number.isInteger(raw) && raw > 0 ? raw : 3000;
+}
+
+/** Проверяет наличие MX-записей у домена. Экспортирована для тестов. */
+export async function hasMxRecords(domain: string): Promise<boolean> {
+  try {
+    const records = await withTimeout(dns.resolveMx(domain), mxTimeoutMs());
     return records.length > 0;
   } catch {
     return false;
   }
 }
 
-@ValidatorConstraint({ name: 'isNotDisposableEmail', async: true })
+/** MX-проверка включена по умолчанию; явное `EMAIL_VERIFY_MX=false` отключает. */
+export function isMxCheckEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return env.EMAIL_VERIFY_MX !== 'false';
+}
+
+@ValidatorConstraint({ name: 'isNotDisposableEmail' })
 class IsNotDisposableEmailConstraint implements ValidatorConstraintInterface {
-  async validate(email: unknown): Promise<boolean> {
+  validate(email: unknown): boolean {
     if (typeof email !== 'string') return false;
     const domain = domainOf(email.trim().toLowerCase());
     if (!domain) return false;
     if (isDisposableDomain(domain)) return false;
-    // Опциональная строгая проверка (по умолчанию выключена: требует DNS,
-    // ломается в офлайне). При включении отсутствие MX = отказ.
-    if (process.env.EMAIL_VERIFY_MX === 'true') {
-      return hasMxRecords(domain);
-    }
     return true;
   }
 
@@ -76,6 +98,33 @@ export function IsNotDisposableEmail(validationOptions?: ValidationOptions) {
       propertyName,
       options: validationOptions,
       validator: IsNotDisposableEmailConstraint,
+    });
+  };
+}
+
+@ValidatorConstraint({ name: 'isDeliverableEmail', async: true })
+class IsDeliverableEmailConstraint implements ValidatorConstraintInterface {
+  async validate(email: unknown): Promise<boolean> {
+    if (!isMxCheckEnabled()) return true;
+    if (typeof email !== 'string') return false;
+    const domain = domainOf(email.trim().toLowerCase());
+    if (!domain) return false;
+    // Fail closed: нет MX, DNS-ошибка или таймаут — отказ в регистрации.
+    return hasMxRecords(domain);
+  }
+
+  defaultMessage(args: ValidationArguments): string {
+    return `${args.property} domain must accept mail (MX record not found)`;
+  }
+}
+
+export function IsDeliverableEmail(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: IsDeliverableEmailConstraint,
     });
   };
 }

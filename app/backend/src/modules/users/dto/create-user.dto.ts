@@ -7,7 +7,10 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { IsNotReservedUsername } from '../../../common/validators/reserved-username.validator';
-import { IsNotDisposableEmail } from '../../../common/validators/disposable-email.validator';
+import {
+  IsDeliverableEmail,
+  IsNotDisposableEmail,
+} from '../../../common/validators/disposable-email.validator';
 
 export class CreateUserDto {
   @Transform(({ value }: { value: unknown }) =>
@@ -34,6 +37,7 @@ export class CreateUserDto {
     message: 'email must contain @ and .',
   })
   @IsNotDisposableEmail()
+  @IsDeliverableEmail()
   email: string;
 
   @IsString()
