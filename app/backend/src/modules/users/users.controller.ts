@@ -15,7 +15,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { clearPairCookies, isSecureCookies } from '../auth/auth-cookies';
 import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { CreateUserDto } from './dto/create-user.dto';
 import { RequestRecoveryDto } from './dto/request-recovery.dto';
 import { FindRecoveryByIdDto } from './dto/find-recovery.dto';
 import { RecoveryPasswordDto } from './dto/recovery-password.dto';
@@ -27,11 +26,6 @@ import type { JwtUserPayload } from '../../common/types/user-payload.type';
 @Controller('users')
 export class UsersController {
   constructor(private readonly service: UsersService) {}
-  @Post()
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.service.create(createUserDto);
-  }
 
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
