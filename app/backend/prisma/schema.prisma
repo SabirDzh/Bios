@@ -6,24 +6,26 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  username     String
+  id           String   @id @default(uuid(7))
+  username     String   @unique
   email        String   @unique
   password     String
   refreshToken String?
   confirmed    Boolean  @default(false)
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())
+  tokens       Token[]
 }
 
 model Token {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String    @db.ObjectId
+  id        String    @id @default(uuid(7))
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      TokenType
   createdAt DateTime  @default(now())
 }
