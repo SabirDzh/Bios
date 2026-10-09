@@ -12,9 +12,11 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { ServersModule } from './modules/servers/servers.module';
 import { DeploymentsModule } from './modules/deployments/deployments.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
+import { AppConfigModule } from './config/app-config.module';
 
 @Module({
   imports: [
+    AppConfigModule,
     // Глобальный лимит 120 req/min (in-memory; для нескольких инстансов нужен Redis).
     // Строгие лимиты на auth-роутах задаются декоратором @Throttle точечно.
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 120 }] }),

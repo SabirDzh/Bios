@@ -153,9 +153,7 @@ function loadKeyMaterial(
   return undefined;
 }
 
-export function loadAuthConfig(
-  env: NodeJS.ProcessEnv = process.env,
-): AuthConfig {
+export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
   const isProduction = env.NODE_ENV === 'production';
   const provided = loadKeyMaterial(env);
 

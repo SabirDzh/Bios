@@ -7,7 +7,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './guards/jwt.strategy';
 import { JwtTokenService } from './jwt-token.service';
-import { AUTH_CONFIG, loadAuthConfig } from './auth.config';
+import { AUTH_CONFIG } from './auth.config';
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 
 @Module({
   imports: [
@@ -21,7 +22,12 @@ import { AUTH_CONFIG, loadAuthConfig } from './auth.config';
     AuthService,
     JwtStrategy,
     JwtTokenService,
-    { provide: AUTH_CONFIG, useFactory: () => loadAuthConfig() },
+    {
+      provide: AUTH_CONFIG,
+      // Без двойной загрузки ключей: AUTH_CONFIG — это поле единого AppConfig.
+      useFactory: (app: AppConfig) => app.jwt,
+      inject: [APP_CONFIG],
+    },
   ],
 })
 export class AuthModule {}
