@@ -33,6 +33,13 @@ import {
 } from './ssh/ssh-runner';
 import type { CreateServerDto } from './dto/create-server.dto';
 import type { TestServerDto } from './dto/test-server.dto';
+import {
+  CursorPage,
+  CursorPaginationDto,
+  decodeCursorOrThrow,
+  encodeCursor,
+  takePage,
+} from '../../common/dto/cursor-pagination.dto';
 
 export const MEMBER_ROLES: WorkspaceRole[] = [
   WorkspaceRole.OWNER,
@@ -168,13 +175,35 @@ export class ServersService {
   async findAll(
     userId: string,
     workspaceId: string,
-  ): Promise<ServerResponse[]> {
+    q: CursorPaginationDto,
+  ): Promise<CursorPage<ServerResponse>> {
     await this.workspaces.requireMembership(userId, workspaceId, MEMBER_ROLES);
+    // Keyset (createdAt, id) — тот же паттерн, что findAllForUser.
+    const limit = q.limit ?? 20;
+    const cursor = q.cursor ? decodeCursorOrThrow(q.cursor) : null;
+    const cursorTs = cursor ? new Date(cursor.ts) : null;
     const servers = await this.prisma.server.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: 'asc' },
+      where: {
+        workspaceId,
+        ...(cursor && cursorTs
+          ? {
+              OR: [
+                { createdAt: { gt: cursorTs } },
+                { createdAt: cursorTs, id: { gt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
     });
-    return servers.map(toServerResponse);
+    const page = takePage(servers, limit, (s) =>
+      encodeCursor(s.createdAt, s.id),
+    );
+    return {
+      items: page.items.map(toServerResponse),
+      nextCursor: page.nextCursor,
+    };
   }
 
   async findOne(

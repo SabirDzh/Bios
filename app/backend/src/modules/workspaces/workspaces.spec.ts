@@ -67,9 +67,32 @@ describe('workspaces create/list/get', () => {
     await workspaces.create(a.id, { name: 'a-two' });
     await workspaces.create(b.id, { name: 'b-one' });
 
-    const list = await workspaces.findAllForUser(a.id);
-    expect(list.map((w) => w.name).sort()).toEqual(['a-one', 'a-two']);
-    expect(list.every((w) => w.role === 'OWNER')).toBe(true);
+    const list = await workspaces.findAllForUser(a.id, {});
+    expect(list.items.map((w) => w.name).sort()).toEqual(['a-one', 'a-two']);
+    expect(list.items.every((w) => w.role === 'OWNER')).toBe(true);
+    expect(list.nextCursor).toBeNull();
+  });
+
+  test('cursor walk: страницы без дублей и пропусков, мусор — 400', async () => {
+    const user = await registerUser();
+    for (const name of ['w-one', 'w-two', 'w-three']) {
+      await workspaces.create(user.id, { name });
+    }
+    const page1 = await workspaces.findAllForUser(user.id, { limit: 2 });
+    expect(page1.items.map((w) => w.name)).toEqual(['w-one', 'w-two']);
+    expect(page1.nextCursor).toEqual(expect.any(String));
+
+    const page2 = await workspaces.findAllForUser(user.id, {
+      limit: 2,
+      cursor: page1.nextCursor as string,
+    });
+    expect(page2.items.map((w) => w.name)).toEqual(['w-three']);
+    expect(page2.nextCursor).toBeNull();
+    expect([...page1.items, ...page2.items]).toHaveLength(3);
+
+    await expect(
+      workspaces.findAllForUser(user.id, { cursor: 'garbage!!' }),
+    ).rejects.toThrow();
   });
 
   test('get чужого workspace неотличим от несуществующего (404)', async () => {

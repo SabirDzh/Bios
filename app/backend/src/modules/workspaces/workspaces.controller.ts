@@ -5,10 +5,12 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
+import { CursorPaginationDto } from '../../common/dto/cursor-pagination.dto';
 import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { WorkspacesService } from './workspaces.service';
@@ -28,8 +30,8 @@ export class WorkspacesController {
   }
 
   @Get()
-  findAll(@User() user: JwtUserPayload) {
-    return this.workspacesService.findAllForUser(user.userId);
+  findAll(@User() user: JwtUserPayload, @Query() q: CursorPaginationDto) {
+    return this.workspacesService.findAllForUser(user.userId, q);
   }
 
   @Get(':workspaceId')

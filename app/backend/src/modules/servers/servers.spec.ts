@@ -213,8 +213,10 @@ describe('servers module', () => {
         name: 'other-ws',
       });
 
-      expect(await servers.findAll(ownerId, workspaceId)).toHaveLength(1);
-      await expect(servers.findAll(ownerId, other.id)).rejects.toThrow(
+      expect(
+        (await servers.findAll(ownerId, workspaceId, {})).items,
+      ).toHaveLength(1);
+      await expect(servers.findAll(ownerId, other.id, {})).rejects.toThrow(
         NotFoundException,
       );
       expect(
@@ -273,7 +275,24 @@ describe('servers module', () => {
       await expect(
         servers.create(memberId, workspaceId, dtoFor({ name: 'nope' })),
       ).rejects.toThrow(ForbiddenException);
-      expect(await servers.findAll(memberId, workspaceId)).toHaveLength(1);
+      expect(
+        (await servers.findAll(memberId, workspaceId, {})).items,
+      ).toHaveLength(1);
+    });
+
+    test('cursor walk: limit+1 даёт nextCursor, вторая страница закрывает список', async () => {
+      for (const name of ['s-one', 's-two', 's-three']) {
+        await servers.create(ownerId, workspaceId, dtoFor({ name }));
+      }
+      const page1 = await servers.findAll(ownerId, workspaceId, { limit: 2 });
+      expect(page1.items.map((s) => s.name)).toEqual(['s-one', 's-two']);
+      expect(page1.nextCursor).toEqual(expect.any(String));
+      const page2 = await servers.findAll(ownerId, workspaceId, {
+        limit: 2,
+        cursor: page1.nextCursor as string,
+      });
+      expect(page2.items.map((s) => s.name)).toEqual(['s-three']);
+      expect(page2.nextCursor).toBeNull();
     });
 
     test('loadForSsh: битый cipher → 500, неизвестный kid → 500, секрета в команде нет', async () => {

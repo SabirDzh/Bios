@@ -12,6 +12,13 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 import { getAppConfig } from '../../config/app-config.module';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import {
+  CursorPage,
+  CursorPaginationDto,
+  decodeCursorOrThrow,
+  encodeCursor,
+  takePage,
+} from '../../common/dto/cursor-pagination.dto';
 
 export interface WorkspaceResponse {
   id: string;
@@ -85,13 +92,38 @@ export class WorkspacesService {
     return toWorkspaceResponse(workspace, WorkspaceRole.OWNER);
   }
 
-  async findAllForUser(userId: string): Promise<WorkspaceResponse[]> {
+  async findAllForUser(
+    userId: string,
+    q: CursorPaginationDto,
+  ): Promise<CursorPage<WorkspaceResponse>> {
+    // Курсорная пагинация keyset (ts, id): стабильный обход без дублей
+    // при конкурентных вступлениях; id — тайбрейк неуникального joinedAt.
+    const limit = q.limit ?? 20;
+    const cursor = q.cursor ? decodeCursorOrThrow(q.cursor) : null;
+    const cursorTs = cursor ? new Date(cursor.ts) : null;
     const memberships = await this.prisma.workspaceMember.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(cursor && cursorTs
+          ? {
+              OR: [
+                { joinedAt: { gt: cursorTs } },
+                { joinedAt: cursorTs, id: { gt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
       include: { workspace: true },
-      orderBy: { joinedAt: 'asc' },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
     });
-    return memberships.map((m) => toWorkspaceResponse(m.workspace, m.role));
+    const page = takePage(memberships, limit, (m) =>
+      encodeCursor(m.joinedAt, m.id),
+    );
+    return {
+      items: page.items.map((m) => toWorkspaceResponse(m.workspace, m.role)),
+      nextCursor: page.nextCursor,
+    };
   }
 
   /** Нет membership — 404 без различия «нет доступа / нет объекта» (без oracle). */

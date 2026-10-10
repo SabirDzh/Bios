@@ -11,7 +11,7 @@ POST api/v1/auth/email-verify - отправка отп на почту, для 
 Workspaces
 
 POST api/v1/workspaces - создание рабочего пространства 
-GET api/v1/workspaces - список рабочих пространств 
+GET api/v1/workspaces - список рабочих пространств (cursor-пагинация: ?cursor&limit → { items, nextCursor })
 GET api/v1/workspaces/:workspace_id - получение рабочего пространства 
 PATCH api/v1/workspaces/:workspace_id - обновление рабочего пространства 
 DELETE api/v1/workspaces/:workspace_id - удаление рабочего пространства 
@@ -29,7 +29,7 @@ POST api/v1/workspaces/:workspace_id/projects - создать проект в �
 GET api/v1/worksapces/:worksapce_id/projects/:project_id - получить проект рабочего пространства 
 PATCH api/v1/workspaces/:workspace_id/projects/:project_id - обновить проект в рабочем пространстве 
 DELETE api/v1/workspaces/:workspace_id/projects/:project_id - удалить проект из рабочего пространства 
-GET api/v1/workspaces/:workspace_id/servers - получить список серверов рабочего пространства 
+GET api/v1/workspaces/:workspace_id/servers - получить список серверов рабочего пространства (cursor-пагинация: ?cursor&limit → { items, nextCursor })
 POST api/v1/workspaces/:workspace_id/servers - создать сервер в рабочем пространстве 
 GET api/v1/workspaces/:workspace_id/servers/:server_id - получить сервер 
 PATCH api/v1/workspaces/:workspace_id/servers/:server_id - изменить сервер 
