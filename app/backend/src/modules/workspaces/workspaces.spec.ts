@@ -313,8 +313,6 @@ describe('workspace invitations', () => {
     const lost = results.filter((r) => r.status === 'rejected');
     expect(won).toHaveLength(1);
     expect(lost).toHaveLength(1);
-    expect((lost[0] as PromiseRejectedResult).reason).toBeInstanceOf(
-      ConflictException,
-    );
+    expect(lost[0].reason).toBeInstanceOf(ConflictException);
   });
 });
