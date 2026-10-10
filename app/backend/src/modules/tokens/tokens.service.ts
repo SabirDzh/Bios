@@ -1,23 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TokenType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
-
-/** TTL одноразовых токенов: подтверждение почты — 24ч, восстановление — 1ч. */
-const TOKEN_TTL_MS: Record<TokenType, number> = {
-  [TokenType.CONFIRM]: 24 * 60 * 60 * 1000,
-  [TokenType.RECOVERY]: 60 * 60 * 1000,
-};
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
+import { getAppConfig } from '../../config/app-config.module';
 
 @Injectable()
 export class TokensService {
-  constructor(private prisma: PrismaService) {}
+  private readonly cfg: AppConfig;
+
+  constructor(
+    private prisma: PrismaService,
+    @Optional() @Inject(APP_CONFIG) config?: AppConfig,
+  ) {
+    this.cfg = config ?? getAppConfig();
+  }
+
+  private ttlSec(type: TokenType): number {
+    return type === TokenType.CONFIRM
+      ? this.cfg.tokens.confirmTtlSec
+      : this.cfg.tokens.recoveryTtlSec;
+  }
 
   async create(userId: string, type: TokenType) {
     return await this.prisma.token.create({
       data: {
         userId,
         type,
-        expiresAt: new Date(Date.now() + TOKEN_TTL_MS[type]),
+        expiresAt: new Date(Date.now() + this.ttlSec(type) * 1000),
       },
     });
   }

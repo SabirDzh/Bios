@@ -8,7 +8,6 @@ import {
   type KeyObject,
 } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { isSecureCookies } from './auth-cookies';
 
 export const JWT_ALGORITHM = 'RS256' as const;
 
@@ -25,7 +24,6 @@ export interface AuthConfig {
   issuer: string;
   audience: string;
   clockToleranceSec: number;
-  cookieSecure: boolean;
   isProduction: boolean;
   /** true, если ключи сгенерированы эфемерно (только non-production). */
   ephemeralKeys: boolean;
@@ -210,7 +208,6 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
       'JWT_CLOCK_TOLERANCE_SEC',
       5,
     ),
-    cookieSecure: isSecureCookies(env),
     isProduction,
     ephemeralKeys,
   };

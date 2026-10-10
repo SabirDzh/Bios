@@ -1,26 +1,57 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
+import { getAppConfig } from '../../config/app-config.module';
 import { RefreshSessionStatus } from '@prisma/client';
 
-/** Неактивные сессии старше 30 дней удаляем (аудит-история короткая, мусора нет). */
-const STALE_SESSION_DAYS = 30;
+export const PURGE_JOB_NAME = 'purgeExpired';
 
 @Injectable()
-export class MaintenanceService {
+export class MaintenanceService implements OnModuleInit {
   private readonly logger = new Logger(MaintenanceService.name);
+  private readonly cfg: AppConfig;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private scheduler: SchedulerRegistry,
+    @Optional() @Inject(APP_CONFIG) config?: AppConfig,
+  ) {
+    this.cfg = config ?? getAppConfig();
+  }
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  onModuleInit() {
+    // Cron нельзя передать через декоратор @Cron (он статичен) — регистрируем
+    // динамически из конфига. CronJob — транзитивная зависимость @nestjs/schedule.
+    const job = new CronJob(
+      this.cfg.maintenance.cron,
+      () => void this.purgeExpired(),
+      null,
+      true,
+      this.cfg.maintenance.timeZone,
+    );
+    this.scheduler.addCronJob(PURGE_JOB_NAME, job);
+  }
+
   async purgeExpired(): Promise<{ tokens: number; sessions: number }> {
     const now = new Date();
+    const cutoff = new Date(
+      now.getTime() -
+        this.cfg.maintenance.staleSessionDays * 24 * 60 * 60 * 1000,
+    );
     const [tokens, sessions] = await Promise.all([
       this.prisma.token.deleteMany({ where: { expiresAt: { lte: now } } }),
       this.prisma.refreshSession.deleteMany({
         where: {
           status: { not: RefreshSessionStatus.ACTIVE },
-          OR: [{ revokedAt: { lt: cutoff() } }, { usedAt: { lt: cutoff() } }],
+          OR: [{ revokedAt: { lt: cutoff } }, { usedAt: { lt: cutoff } }],
         },
       }),
     ]);
@@ -31,8 +62,4 @@ export class MaintenanceService {
     }
     return { tokens: tokens.count, sessions: sessions.count };
   }
-}
-
-function cutoff(): Date {
-  return new Date(Date.now() - STALE_SESSION_DAYS * 24 * 60 * 60 * 1000);
 }

@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from '../../modules/users/dto/create-user.dto';
 import { hasMxRecords, isDisposableDomain } from './disposable-email.validator';
+import { reloadAppConfigForTests } from '../../config/app-config.module';
 
 jest.mock('node:dns', () => ({
   promises: { resolveMx: jest.fn() },
@@ -28,6 +29,7 @@ describe('disposable email blocking', () => {
     resolveMx.mockResolvedValue(MX);
     delete process.env.EMAIL_VERIFY_MX;
     delete process.env.EMAIL_EXTRA_BLOCKED_DOMAINS;
+    reloadAppConfigForTests();
   });
 
   test('isDisposableDomain: exact, subdomain, case-insensitive', () => {
@@ -54,6 +56,7 @@ describe('disposable email blocking', () => {
 
   test('extra blocked domains via env', async () => {
     process.env.EMAIL_EXTRA_BLOCKED_DOMAINS = 'evil-corp.example, spam.io';
+    reloadAppConfigForTests();
     try {
       expect(isDisposableDomain('evil-corp.example')).toBe(true);
       expect(isDisposableDomain('x.spam.io')).toBe(true);
@@ -71,6 +74,7 @@ describe('MX record check', () => {
     resolveMx.mockReset();
     delete process.env.EMAIL_VERIFY_MX;
     delete process.env.EMAIL_MX_TIMEOUT_MS;
+    reloadAppConfigForTests();
   });
 
   test('hasMxRecords: true with MX, false without or on DNS error', async () => {
@@ -88,6 +92,7 @@ describe('MX record check', () => {
 
   test('hasMxRecords: timeout fails closed', async () => {
     process.env.EMAIL_MX_TIMEOUT_MS = '50';
+    reloadAppConfigForTests();
     resolveMx.mockImplementationOnce(() => new Promise(() => undefined));
     await expect(hasMxRecords('slow.example.com')).resolves.toBe(false);
     expect(resolveMx).toHaveBeenCalledWith('slow.example.com');
@@ -102,6 +107,7 @@ describe('MX record check', () => {
 
   test('EMAIL_VERIFY_MX=false disables the check', async () => {
     process.env.EMAIL_VERIFY_MX = 'false';
+    reloadAppConfigForTests();
     resolveMx.mockRejectedValue(new Error('offline'));
     const dto = plainToInstance(CreateUserDto, {
       username: 'validname',

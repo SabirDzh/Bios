@@ -1,12 +1,16 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomBytes, createHash } from 'node:crypto';
 import { Prisma, WorkspaceRole, InvitationStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
+import { getAppConfig } from '../../config/app-config.module';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 
 export interface WorkspaceResponse {
@@ -36,8 +40,6 @@ export interface MembershipResponse {
   joinedAt: Date;
 }
 
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
 export function hashInvitationToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
@@ -57,7 +59,14 @@ function toWorkspaceResponse(
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly cfg: AppConfig;
+
+  constructor(
+    private prisma: PrismaService,
+    @Optional() @Inject(APP_CONFIG) config?: AppConfig,
+  ) {
+    this.cfg = config ?? getAppConfig();
+  }
 
   async create(
     userId: string,
@@ -154,7 +163,9 @@ export class WorkspacesService {
             email: normalizedEmail,
             tokenHash: hashInvitationToken(token),
             invitedById: inviterId,
-            expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
+            expiresAt: new Date(
+              now.getTime() + this.cfg.invitations.ttlSec * 1000,
+            ),
           },
         });
       });

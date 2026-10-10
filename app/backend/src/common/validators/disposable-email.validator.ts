@@ -7,18 +7,14 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import disposableDomains from 'disposable-email-domains';
+import { getAppConfig } from '../../config/app-config.module';
 
 // 121k+ доменов из поддерживаемого репозитория
 // (github.com/disposable/disposable-email-domains). Строится один раз.
 const DISPOSABLE_SET = new Set(disposableDomains.map((d) => d.toLowerCase()));
 
 function extraBlockedDomains(): Set<string> {
-  return new Set(
-    (process.env.EMAIL_EXTRA_BLOCKED_DOMAINS ?? '')
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
+  return new Set(getAppConfig().email.extraBlockedDomains);
 }
 
 function domainOf(email: string): string | undefined {
@@ -55,8 +51,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function mxTimeoutMs(): number {
-  const raw = Number(process.env.EMAIL_MX_TIMEOUT_MS ?? 3000);
-  return Number.isInteger(raw) && raw > 0 ? raw : 3000;
+  return getAppConfig().email.mxTimeoutMs;
 }
 
 /** Проверяет наличие MX-записей у домена. Экспортирована для тестов. */
@@ -69,21 +64,13 @@ export async function hasMxRecords(domain: string): Promise<boolean> {
   }
 }
 
-/** MX-проверка включена по умолчанию; явное `EMAIL_VERIFY_MX=false` отключает. */
-export function isMxCheckEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return env.EMAIL_VERIFY_MX !== 'false';
-}
-
 @ValidatorConstraint({ name: 'isNotDisposableEmail' })
 class IsNotDisposableEmailConstraint implements ValidatorConstraintInterface {
   validate(email: unknown): boolean {
     if (typeof email !== 'string') return false;
     const domain = domainOf(email.trim().toLowerCase());
     if (!domain) return false;
-    if (isDisposableDomain(domain)) return false;
-    return true;
+    return !isDisposableDomain(domain);
   }
 
   defaultMessage(args: ValidationArguments): string {
@@ -105,7 +92,7 @@ export function IsNotDisposableEmail(validationOptions?: ValidationOptions) {
 @ValidatorConstraint({ name: 'isDeliverableEmail', async: true })
 class IsDeliverableEmailConstraint implements ValidatorConstraintInterface {
   async validate(email: unknown): Promise<boolean> {
-    if (!isMxCheckEnabled()) return true;
+    if (!getAppConfig().email.verifyMx) return true;
     if (typeof email !== 'string') return false;
     const domain = domainOf(email.trim().toLowerCase());
     if (!domain) return false;

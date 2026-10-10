@@ -14,11 +14,6 @@ export interface CookieFlags {
   path: string;
 }
 
-/** Единое правило Secure-флага (совпадает с AppConfig.cookies.secure). */
-export function isSecureCookies(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.NODE_ENV === 'production';
-}
-
 export function buildCookieOptions(
   flags: Pick<CookieFlags, 'cookieSecure' | 'sameSite' | 'path'>,
   maxAgeMs: number,

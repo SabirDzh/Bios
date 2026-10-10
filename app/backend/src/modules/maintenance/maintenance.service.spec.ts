@@ -1,5 +1,7 @@
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import { MaintenanceService } from './maintenance.service';
+import { loadAppConfig } from '../../config/app.config';
+import { MaintenanceService, PURGE_JOB_NAME } from './maintenance.service';
 
 const TEST_DB_URL =
   'postgresql://sabir@localhost:5432/bios_test_maintenance?schema=public';
@@ -8,10 +10,16 @@ process.env.DATABASE_URL = TEST_DB_URL;
 describe('MaintenanceService.purgeExpired', () => {
   let prisma: PrismaService;
   let maintenance: MaintenanceService;
+  let registry: SchedulerRegistry;
 
   beforeAll(() => {
     prisma = new PrismaService();
-    maintenance = new MaintenanceService(prisma);
+    registry = new SchedulerRegistry();
+    maintenance = new MaintenanceService(
+      prisma,
+      registry,
+      loadAppConfig({ ...process.env, NODE_ENV: 'test' }),
+    );
   });
 
   afterAll(async () => {
@@ -72,5 +80,10 @@ describe('MaintenanceService.purgeExpired', () => {
     expect(
       await prisma.refreshSession.findUnique({ where: { jti: 'live-active' } }),
     ).toBeTruthy();
+  });
+
+  test('onModuleInit registers the purge job with config cron and timezone', () => {
+    maintenance.onModuleInit();
+    expect(registry.getCronJobs().has(PURGE_JOB_NAME)).toBe(true);
   });
 });
