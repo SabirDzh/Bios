@@ -36,7 +36,7 @@ export class UsersService {
       throw new BadRequestException();
     }
     const token = await this.tokensService.create(user.id, TokenType.CONFIRM);
-    this.sendConfirmationMail(user.email, token.id);
+    await this.sendConfirmationMail(user.email, token.id);
 
     const { password: _password, ...userWithoutPassword } = user;
     void _password;
@@ -104,7 +104,7 @@ export class UsersService {
         TokenType.RECOVERY,
       );
 
-      this.sendRecoveryMail(user.email, token.id);
+      await this.sendRecoveryMail(user.email, token.id);
     } catch {
       // Не раскрываем, существует ли email: ответ всегда одинаковый.
     }

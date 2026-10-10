@@ -13,7 +13,6 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
-  // Gzip-сжатие всех ответов (порог по умолчанию — 1 КБ).
   app.use(compression());
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
