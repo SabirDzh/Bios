@@ -74,7 +74,7 @@
 - Consumes: ничего.
 - Produces: `dockerode` в `dependencies`, `@types/dockerode` в `devDependencies`; дальнейшие задачи импортируют `import Docker from 'dockerode'` и тип `import type Dockerode from 'dockerode'`.
 
-- [ ] **Step 1: Зафиксировать текущее состояние**
+- [x] **Step 1: Зафиксировать текущее состояние**
 
 ```bash
 cd app/backend && git status --short && npx jest 2>&1 | grep -E '^(Test Suites|Tests)'
@@ -82,7 +82,7 @@ cd app/backend && git status --short && npx jest 2>&1 | grep -E '^(Test Suites|T
 
 Expected: 21 suite / 187 тестов PASS. Если нет — разбор до начала работы (в дереве параллельная правка `auth/**`).
 
-- [ ] **Step 2: Установить ровно те версии, что проверены спайком**
+- [x] **Step 2: Установить ровно те версии, что проверены спайком**
 
 ```bash
 cd app/backend && npm i dockerode@5.0.1 && npm i -D @types/dockerode
@@ -91,7 +91,7 @@ node -e "const p=require('./package.json');console.log(p.dependencies.dockerode,
 
 Expected: `5.0.1` и версия типов. Если npm тянет `docker-modem` другой мажорной версии — проверить, что `node_modules/docker-modem/lib/modem.js` всё ещё содержит `this.agent = opts.agent` (строка ~112) и `optionsf.agent = this.agent` (~182); на этих двух строках держится весь транспорт.
 
-- [ ] **Step 3: Проверить, что «сырая» зависимость не ломает сборку**
+- [x] **Step 3: Проверить, что «сырая» зависимость не ломает сборку**
 
 ```bash
 cd app/backend && npm run build && npx jest src/modules/servers 2>&1 | grep -E '^(Test Suites|Tests)'
@@ -99,7 +99,7 @@ cd app/backend && npm run build && npx jest src/modules/servers 2>&1 | grep -E '
 
 Expected: сборка без ошибок, серверные тесты зелёные.
 
-- [ ] **Step 4: Коммит**
+- [x] **Step 4: Коммит**
 
 ```bash
 git add app/backend/package.json app/backend/package-lock.json
@@ -149,7 +149,7 @@ export class DockerSshTransport implements DockerTransport {
 }
 ```
 
-- [ ] **Step 1: Падающий юнит-тест агента (без SSH — мокаем `Client`)**
+- [x] **Step 1: Падающий юнит-тест агента (без SSH — мокаем `Client`)**
 
 Create `src/modules/servers/ssh/docker-agent.spec.ts`:
 
@@ -225,7 +225,7 @@ test('close() уничтожает агента: повторный запрос
 
 Run: `npx jest src/modules/servers/ssh/docker-agent.spec.ts` → FAIL «Cannot find module './docker-agent'».
 
-- [ ] **Step 2: Реализовать `docker-agent.ts`**
+- [x] **Step 2: Реализовать `docker-agent.ts`**
 
 ```ts
 import http from 'node:http';
@@ -260,11 +260,11 @@ export function createDockerAgent(
 }
 ```
 
-- [ ] **Step 3: Прогнать — зелёные оба теста**
+- [x] **Step 3: Прогнать — зелёные оба теста**
 
 Run: `npx jest src/modules/servers/ssh/docker-agent.spec.ts`. Expected: 2 PASS.
 
-- [ ] **Step 4: Тест реального транспорта против ssh2-фикстуры (SSH + пин + один коннект на много вызовов)**
+- [x] **Step 4: Тест реального транспорта против ssh2-фикстуры (SSH + пин + один коннект на много вызовов)**
 
 Modify `src/modules/servers/ssh/testing/ssh-server-fixture.ts`: в `FixtureOptions` добавить
 
@@ -382,7 +382,7 @@ test('без принятого пина транспорт падает до а
 
 Run: `npx jest src/modules/servers/ssh/node-ssh.docker-transport.spec.ts` → FAIL (нет метода `dockerTransport`).
 
-- [ ] **Step 5: Реализовать `dockerTransport` в `NodeSshRunner`**
+- [x] **Step 5: Реализовать `dockerTransport` в `NodeSshRunner`**
 
 Вынести конфиг подключения из `exec` (иначе правило «верификатор до аутентификации» продублируется и разъедется):
 
@@ -465,7 +465,7 @@ Run: `npx jest src/modules/servers/ssh/node-ssh.docker-transport.spec.ts` → FA
 
 (`import { Client } from 'ssh2'` и `import { createDockerAgent } from './docker-agent'`; `Config` уже импортирован из `node-ssh`.)
 
-- [ ] **Step 6: Реализовать двойник в `FakeSshRunner`**
+- [x] **Step 6: Реализовать двойник в `FakeSshRunner`**
 
 Двойник поднимает `http.Server` на loopback и отдаёт скриптованные ответы — тогда `DockerService` тестируется с настоящей `dockerode`, но без демона и без SSH. Контракт:
 
@@ -512,7 +512,7 @@ Run: `npx jest src/modules/servers/ssh/node-ssh.docker-transport.spec.ts` → FA
 
 `reset()` дополнить: `this.dockerRequests.length = 0; this.dockerRoutes = {};` (иначе ответы потечут в следующий тест — тот же класс ошибки, что чинили в части 3).
 
-- [ ] **Step 7: `loadForSsh` — из private в public**
+- [x] **Step 7: `loadForSsh` — из private в public**
 
 Modify `src/modules/servers/servers.service.ts`: сменить `private async loadForSsh(` на `async loadForSsh(`. Doc-комментарий над ним (`:327-331`) остаётся; к нему добавить строку:
 
@@ -520,7 +520,7 @@ Modify `src/modules/servers/servers.service.ts`: сменить `private async l
    * Публичный: DockerService обязан проходить те же guard/политику/пин, что и test/install.
 ```
 
-- [ ] **Step 8: Все серверные тесты + сборка**
+- [x] **Step 8: Все серверные тесты + сборка**
 
 ```bash
 cd app/backend && npx jest src/modules/servers 2>&1 | grep -E '^(Tests|Test Suites|FAIL)' && npm run build
@@ -528,7 +528,7 @@ cd app/backend && npx jest src/modules/servers 2>&1 | grep -E '^(Tests|Test Suit
 
 Expected: PASS, сборка чистая (в том числе `servers.spec.ts`, где `FakeSshRunner` теперь обязан реализовать новый метод интерфейса — TS не даст пропустить).
 
-- [ ] **Step 9: prettier/eslint + коммит**
+- [x] **Step 9: prettier/eslint + коммит**
 
 ```bash
 npx prettier --write "src/modules/servers/**/*.ts" && npx eslint src/modules/servers && git add app/backend/src/modules/servers app/backend/src/modules/servers/ssh
@@ -575,7 +575,7 @@ list(userId: string, workspaceId: string, serverId: string, all: boolean): Promi
 details(userId: string, workspaceId: string, serverId: string, containerId: string): Promise<ContainerDetails>;
 ```
 
-- [ ] **Step 1: Тест на валидацию id контейнера (падающий)**
+- [x] **Step 1: Тест на валидацию id контейнера (падающий)**
 
 Create `src/modules/servers/docker/dto/dto.spec.ts`:
 
@@ -610,7 +610,7 @@ test('containerId: слэш, точка-точка, пробел и длина >
 
 Run: `npx jest src/modules/servers/docker/dto/dto.spec.ts` → FAIL (нет модуля).
 
-- [ ] **Step 2: DTO**
+- [x] **Step 2: DTO**
 
 Create `src/modules/servers/docker/dto/container-ids.dto.ts`:
 
@@ -637,11 +637,11 @@ export class ContainerIdsDto extends ServerIdsDto {
 }
 ```
 
-- [ ] **Step 3: Прогнать DTO-тест**
+- [x] **Step 3: Прогнать DTO-тест**
 
 Run: `npx jest src/modules/servers/docker/dto/dto.spec.ts`. Expected: PASS (2 теста). Если `MaxLength` ругается на 129-символьную строку раньше `Matches` — оба дают ошибку по `containerId`, тест это принимает.
 
-- [ ] **Step 4: Классификация недоступности Docker (падающий тест)**
+- [x] **Step 4: Классификация недоступности Docker (падающий тест)**
 
 Create `src/modules/servers/docker/docker-readiness.spec.ts`:
 
@@ -684,7 +684,7 @@ test('непонятный вывод — DOCKER_UNREACHABLE, а не «кома
 
 Run → FAIL (нет модуля).
 
-- [ ] **Step 5: Реализовать классификатор**
+- [x] **Step 5: Реализовать классификатор**
 
 Create `src/modules/servers/docker/docker-readiness.ts`:
 
@@ -712,7 +712,7 @@ export function classifyDialFailure(stderr: string, observed: string): SshErrorC
 
 Run: `npx jest src/modules/servers/docker/docker-readiness.spec.ts`. Expected: 4 PASS.
 
-- [ ] **Step 6: Тесты сервиса: список, детали, скоупинг, ошибки**
+- [x] **Step 6: Тесты сервиса: список, детали, скоупинг, ошибки**
 
 Create `src/modules/servers/docker/docker.service.spec.ts`. Каркас и хелперы (`testAppConfig`, `dtoFor`, `trustedServer`, `pin`) — **те же, что в `src/modules/servers/servers.spec.ts:1-120`**, скопировать дословно (тот же паттерн: реальный `PrismaService` к `bios_test_servers`, `FakeSshRunner`, `CredentialCryptoService`). Дальше:
 
@@ -830,7 +830,7 @@ test('docker отсутствует на хосте → 424 DOCKER_MISSING (не
 
 Run: `npx jest src/modules/servers/docker` → FAIL (нет `docker.service.ts` с методами).
 
-- [ ] **Step 7: Реализовать `DockerService` (только чтение списка/деталей)**
+- [x] **Step 7: Реализовать `DockerService` (только чтение списка/деталей)**
 
 ```ts
 import { HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
@@ -916,11 +916,11 @@ export class DockerService {
 
 `toHttp(err: SshFailure)` = `FailedDependencyException` (уже есть в `src/common/http/`) с `errorCode` из ошибки; если это `DOCKER_UNREACHABLE`, предварительно прогнать текст канала через `classifyDialFailure`.
 
-- [ ] **Step 8: Прогнать тесты**
+- [x] **Step 8: Прогнать тесты**
 
 Run: `npx jest src/modules/servers/docker`. Expected: все PASS; `ssh.dockerRequests` непустой там, где это заявлено.
 
-- [ ] **Step 9: Модуль, сборка, линт, коммит**
+- [x] **Step 9: Модуль, сборка, линт, коммит**
 
 Modify `src/modules/servers/docker/docker.module.ts`:
 
@@ -983,7 +983,7 @@ docker: { logsMaxBytes: number; statsTimeoutMs: number };
 // env: DOCKER_LOGS_MAX_BYTES (default 262144), DOCKER_STATS_TIMEOUT_MS (default 15000)
 ```
 
-- [ ] **Step 1: Конфиг — падающий тест**
+- [x] **Step 1: Конфиг — падающий тест**
 
 В `src/config/app.config.spec.ts` добавить:
 
@@ -1010,7 +1010,7 @@ test('docker limits: ноль и мусор — fail-fast', () => {
 
 Run → FAIL.
 
-- [ ] **Step 2: Реализовать секцию `docker` в `loadAppConfig`**
+- [x] **Step 2: Реализовать секцию `docker` в `loadAppConfig`**
 
 ```ts
   const docker = {
@@ -1035,7 +1035,7 @@ Run → FAIL.
 
 Run: `npx jest src/config` → PASS.
 
-- [ ] **Step 3: Тест логов (мультиплексирование, хвост, обрезка)**
+- [x] **Step 3: Тест логов (мультиплексирование, хвост, обрезка)**
 
 Add to `docker.service.spec.ts`:
 
@@ -1092,7 +1092,7 @@ test('логи: tail=0 на стороне демона, хвост считае
 
 Run → FAIL.
 
-- [ ] **Step 4: Реализовать `logs` + DTO**
+- [x] **Step 4: Реализовать `logs` + DTO**
 
 Create `src/modules/servers/docker/dto/container-log-query.dto.ts`:
 
@@ -1193,7 +1193,7 @@ export async function demuxBounded(
 
 Run: `npx jest src/modules/servers/docker -t 'логи'` → PASS.
 
-- [ ] **Step 5: Тест stats (одна точка = две выборки) и реализация**
+- [x] **Step 5: Тест stats (одна точка = две выборки) и реализация**
 
 Add to `docker.service.spec.ts`:
 
@@ -1266,13 +1266,13 @@ test('stats: пустой ответ демона → нули, а не NaN', as
 
 Run: `npx jest src/modules/servers/docker -t 'stats'` → PASS.
 
-- [ ] **Step 6: Таймаут транспорта по типу операции**
+- [x] **Step 6: Таймаут транспорта по типу операции**
 
 В `withDocker` заменить `this.timeoutMs()` на параметр `timeoutMs: number`, вызывающие методы передают `cfg.ssh.commandTimeoutMs` (list/details/logs) и `cfg.docker.statsTimeoutMs` (stats). Проверить, что `docker.stats` в тесте получает в `ssh.dockerTransportTimeouts` значение 15000: добавить в `FakeSshRunner` массив `transportTimeouts: number[]` и ассерт.
 
 Run: `npx jest src/modules/servers/docker` → PASS.
 
-- [ ] **Step 7: Сборка, линт, коммит**
+- [x] **Step 7: Сборка, линт, коммит**
 
 ```bash
 cd app/backend && npm run build && npx eslint src/modules/servers src/config && npx prettier --write "src/modules/servers/**/*.ts" "src/config/**/*.ts"
@@ -1306,7 +1306,7 @@ export interface ContainerActionResponse {
 // app.config.ts → cfg.throttle.dockerReads = { limit: 60, ttlMs: 60000 } (env THROTTLE_DOCKER_READS)
 ```
 
-- [ ] **Step 1: Тест действия (падающий)**
+- [x] **Step 1: Тест действия (падающий)**
 
 Add to `docker.service.spec.ts`:
 
@@ -1345,7 +1345,7 @@ test('restart недоступен роль ниже OWNER', async () => {
 
 Run → FAIL.
 
-- [ ] **Step 2: DTO действия**
+- [x] **Step 2: DTO действия**
 
 Create `src/modules/servers/docker/dto/container-action.dto.ts`:
 
@@ -1376,7 +1376,7 @@ test('ContainerActionDto принимает только restart', async () => {
 
 Run: `npx jest src/modules/servers/dto` → PASS.
 
-- [ ] **Step 3: Реализовать `act`**
+- [x] **Step 3: Реализовать `act`**
 
 ```ts
   async act(
@@ -1413,13 +1413,13 @@ Run: `npx jest src/modules/servers/dto` → PASS.
 
 Run: `npx jest src/modules/servers/docker -t 'restart'` → PASS.
 
-- [ ] **Step 4: Профиль `dockerReads`**
+- [x] **Step 4: Профиль `dockerReads`**
 
 `app.config.ts`: в `throttle` добавить `dockerReads: parseThrottle(env, 'THROTTLE_DOCKER_READS', { limit: 60, ttlMs: 60000 })`; тип `AppConfig['throttle']` дополнить полем. `throttle-options.factory.ts`: строка `entry('dockerReads', cfg.throttle.dockerReads)` + `skipIf: skipUnless('dockerReads')` по образцу `sshOps` (`:57-58`). В `throttle-profiles.spec.ts` обновить ассерт «builds 5 named throttlers» на 6 и добавить `['dockerReads', 60, 60000]`.
 
 Run: `npx jest src/config src/common/throttle` → PASS.
 
-- [ ] **Step 5: Сборка, линт, коммит**
+- [x] **Step 5: Сборка, линт, коммит**
 
 ```bash
 cd app/backend && npm run build && npx eslint src/modules/servers src/common/throttle src/config && npx prettier --write "src/**/*.ts"
@@ -1439,7 +1439,7 @@ git commit -m "feat(backend): owner-only container restart with docker reads pro
 - Consumes: `DockerService.list/details/logs/stats/act`, `JwtAuthGuard`, `ThrottleProfile`, DTO из Task 2–4.
 - Produces: пять маршрутов под `workspaces/:workspaceId/servers/:serverId/docker` (базовый путь уже в файле, `docker.controller.ts:4`).
 
-- [ ] **Step 1: Контроллер**
+- [x] **Step 1: Контроллер**
 
 ```ts
 @Controller('workspaces/:workspaceId/servers/:serverId/docker')
@@ -1521,7 +1521,7 @@ export class DockerController {
 
 `ServerScopeDto` — существующий DTO пути без `serverId`? Если такого нет (проверить `ls src/modules/servers/dto`), использовать `ServerIdsDto` и игнорировать `containerId` как необязательный: в `ServerIdsDto` есть только `workspaceId`/`serverId`, поэтому для `list` он и применяется.
 
-- [ ] **Step 2: e2e (8+ тестов, паттерн `test/servers.e2e-spec.ts`)**
+- [x] **Step 2: e2e (8+ тестов, паттерн `test/servers.e2e-spec.ts`)**
 
 Create `test/docker-operate.e2e-spec.ts` с тем же заголовком (env до `require`, `INestApplication<App>`, `idOf`, `ssh.reset()` в `beforeEach`, FK-порядок в `afterEach`) и тестами:
 
@@ -1537,7 +1537,7 @@ Create `test/docker-operate.e2e-spec.ts` с тем же заголовком (en
 
 Запуск: `npx jest --config test/jest-e2e.json test/docker-operate.e2e-spec.ts` → PASS.
 
-- [ ] **Step 3: Полный прогон unit+e2e и коммит**
+- [x] **Step 3: Полный прогон unit+e2e и коммит**
 
 ```bash
 cd app/backend && npx jest && npx jest --config test/jest-e2e.json test/servers.e2e-spec.ts test/docker-operate.e2e-spec.ts && npm run build && npx prettier --check "src/**/*.ts" "test/**/*.ts"
@@ -1552,7 +1552,7 @@ git commit -m "feat(backend): docker operate routes with per-profile throttling"
 **Files:**
 - Только временные артефакты в `/tmp`, ничего в репозитории.
 
-- [ ] **Step 1: Поднять sshd с docker-cli и сокетом демона**
+- [x] **Step 1: Поднять sshd с docker-cli и сокетом демона**
 
 Тот же образ, что в части 3 (Dockerfile: alpine + `openssh` + `docker-cli`, root-пароль, `PermitRootLogin yes`):
 
@@ -1566,7 +1566,7 @@ docker exec bios-sshd-p4 docker version --format '{{.Server.Version}}'
 
 Expected: версия демона (в прогоне 2026-10-10 — `28.3.2`).
 
-- [ ] **Step 2: Панель + последовательность «aha» без ручного SSH**
+- [x] **Step 2: Панель + последовательность «aha» без ручного SSH**
 
 ```bash
 cd app/backend
@@ -1623,7 +1623,7 @@ Expected — эти строки и есть доказательство, их 
 - `restart` у MEMBER → `403`; путь `..%2f..%2f` → `400`; неподтверждённый пин → `424 HOST_KEY_NOT_TRUSTED` и в sshd — только `[preauth]` строки;
 - замерить `time_total` на `stats` и `containers` — числа идут в коммит, потому что «одно соединение на запрос» — это архитектурное обещание.
 
-- [ ] **Step 3: Убрать инфраструктуру дыма**
+- [x] **Step 3: Убрать инфраструктуру дыма**
 
 ```bash
 kill $(cat /tmp/bios-panel-p4.pid)
@@ -1634,7 +1634,7 @@ git status --short
 
 Expected: панель убита по PID (не `pkill -f`), контейнеры удалены, `/tmp/bios-dockerode-spike` (наш спайк) убран, `git status` — только чужие правки `auth/**`/`users/**`.
 
-- [ ] **Step 4: DoD-сверка и коммит**
+- [x] **Step 4: DoD-сверка и коммит**
 
 | Требование | Где доказано |
 |---|---|
@@ -2042,3 +2042,57 @@ Expected: ровно одна версия `ssh2` в дереве (собств�
 - **`docker system dial-stdio` требует `docker` CLI на хосте** ≥ версии, где подкоманда есть: при отсутствии получаем `424 DOCKER_MISSING`, а не «контейнеров нет» — но проверку на `docker version` (часть 3) мы не дублируем.
 - **Ответы мапим руками:** новые поля Docker API в ответ не попадают (это плюс для контракта и минус для полноты: например, `health` есть только в деталях).
 - **`..%2f`-защита на regex id:** имя контейнера с нестандартными символами (например, с пробелом) в Docker возможно, но нашим DTO отклоняется; на практике имена `docker run --name` так не называют.
+- **`exitCode` не стартовавшего контейнера = 0:** демон кладёт Go-нулевой `State.ExitCode` для `status:"created"` (промер 2026-10-10). Нулевую ДАТУ мы мапим в null, нулевой КОД — нет: `0` неотличим от «успешно завершился». Правка — только вместе с фронтом, который решит, что показывать на `created`.
+
+---
+
+## Живой smoke (выполнено 2026-10-10, демон 28.3.2)
+
+Инфраструктура: контейнер `bios-sshd-p4` (alpine + openssh + docker-cli, сокет
+демона смонтирован внутрь) на `127.0.0.1:2203`, панель на `dist/main`, БД
+`bios_test_servers`. Одноразовые контейнеры: `bios-p4-crashed`
+(`exit 3`, две строки лога), `bios-p4-nop` (`sleep 600`),
+`bios-p4-neverstarted` (`docker create` без `start`). Убрано после прогона.
+
+| Шаг | Ответ | Замер |
+|---|---|---|
+| `GET .../docker/containers` до подтверждения пина | `424 HOST_KEY_NOT_TRUSTED` | в sshd только `[preauth]` — креденшелы не уходили |
+| `GET .../docker/containers?all=true` | `200`, 6 контейнеров, поля только панели (`ImageID`/`Platform` отсутствуют) | 70 мс, 1 авторизация sshd на запрос |
+| `GET .../containers/bios-p4-crashed` | `200`, `state:"exited"`, `exitCode:3`, `health:"NONE"`, `oomKilled:false` | 50 мс |
+| `GET .../containers/bios-p4-crashed/logs?tail=10` | `200`, `lines` = `first-line` (stdout) → `boom-to-stderr` (stderr), `tty:false` | 57 мс, два вызова демона (inspect + logs) на ОДНОМ коннекте |
+| `GET .../containers/bios-p4-crashed/stats` | `200`, всё `null` (остановленный контейнер) | 37 мс |
+| `GET .../containers/bios-p4-nop/stats` | `200`, `memoryUsageBytes:552960`, `netRxBytes:914`, `blkReadBytes:12288`, `cpuPercent:null` | 1064 мс — ровно промер `stream:false` |
+| `PATCH .../containers/bios-p4-nop` (OWNER) | `200`, `state:"running"`, `startedAt` изменился с 16:07:37 на 16:09:28 | 1225 мс, `Accepted password` в sshd: ровно +1 |
+| `PATCH` тем же телом (MEMBER) | `403 Forbidden` | `GET .../containers` тому же пользователю — `200` |
+| `GET .../containers/..%2f..%2fjson` | `400` | до транспорта не дошло |
+
+Счётчик соединений подтверждает архитектурное обещание: `logs+details` = 2
+авторизации (по одной на HTTP-запрос), `list` = 1. Повторная сборка пула не
+потребуется ни в этой части, ни во фронтенде.
+
+Найденное дымом и исправленное (коммит `fix(backend): docker zero-time values
+map to null instead of year one`): демон отдаёт Go-нулевую дату
+`0001-01-01T00:00:00Z` в `State.StartedAt` не стартовавшего контейнера и в
+`read` stats остановленного. Панель показывала «1 год н.э.» — теперь `null`.
+Проверено повторно на живом демоне: `startedAt:null`, `readAt:null`.
+
+## DoD-сверка (часть 4)
+
+| Требование | Где доказано |
+|---|---|
+| `GET .../docker/containers` | Task 2 (юнит) + Task 5 (e2e) + дым (70 мс, 1 коннект) |
+| `GET .../containers/:id` | Task 2 + e2e + дым (`exitCode:3`, `health:"NONE"`) |
+| `GET .../logs` | Task 3 (порядок фреймов, TTY, бюджет UTF-8) + e2e + дым (реальный demux) |
+| `GET .../stats` | Task 3 (дельта-формула по живой структуре) + e2e + дым (1064 мс, null у остановленного) |
+| `PATCH .../containers/:id` restart | Task 4 (OWNER/403, hang→504) + e2e + дым (+1 sshd-авторизация) |
+| stub `return []` удалён | `grep -rn "findContainers\|return \[\];" src/modules/servers/docker` → 0 совпадений |
+| guard + workspace-scoping | `loadForSsh` (часть 3) + Task 2 (404 неотличим) + e2e (401 без куки, 403 MEMBER) |
+| e2e через куку `access_token` | `test/docker-operate.e2e-spec.ts`, 9 тестов |
+| без новых зависимостей кроме dockerode | Task 0: `dockerode@5.0.1` одним коммитом |
+| политика адресов и пин до аутентификации | `node-ssh.docker-transport.spec.ts` + дым (`[preauth]`) |
+| ошибки Docker ≠ 5xx | таблица P1-E: 404/424/504; 500 только для дефектов панели |
+| логи не съедают память | Task 3: `truncated`, `limitBytes`, окно в 2 бюджета, тесты на обрезку |
+
+Что дым НЕ доказывает: `recreate` (вне P0), стриминг логов (`follow:true` →
+SSE, P1), мульти-хостовый одним соединением (пула нет), не-Linux-хосты, и
+`dockerReads` под реальным 429 (профиль проверен фабрикой и skipIf-юнитом).
