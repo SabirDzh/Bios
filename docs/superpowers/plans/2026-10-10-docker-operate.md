@@ -1660,6 +1660,370 @@ git commit -m "test(backend): docker operate e2e and live smoke over ssh transpo
 
 ---
 
+## Правки по ревью 2026-10-10 (этот раздел переопределяет текст задач выше)
+
+Ревьюер вернул план на доработку. Каждый пункт сверен с кодом и живым демоном ниже; два пункта оказались неверны по факту — они отклонены с доказательством.
+
+| Пункт | Вердикт | Как проверено |
+|---|---|---|
+| P1-5 таймаут только на handshake | **верно** | `dockerTransport` снимает guard в `finally` после `ready`; `await fn(docker)` в `withDocker` не ограничен |
+| P1-5b «stats ≥ 2×`commandTimeoutMs`» | **верно как противоречие, но не в ту сторону** | дефолты: `connectTimeoutMs=10000`, `commandTimeoutMs=15000` (`app.config.ts:361-372`); правило «2×» было моей неизмеренной фразой — removing, базис ниже: одна выборка stats = 1064 мс (спайк) |
+| P1-6 структура stats | **верно** | живой демон: `cpu_stats = {cpu_usage, system_cpu_usage: <число>, online_cpus, throttling_data}`, `precpu_stats.system_cpu_usage` тоже число, блок — `blkio_stats.io_service_bytes_recursive` |
+| P1-7 `Number(null) === 0` | **верно** | `node -e "console.log(Number(null))"` → `0`: у running-контейнера появился бы `exitCode: 0` |
+| P2-8 `startedAt` = `Created` | **верно** | в list API `Created` — время создания; `State.StartedAt` есть только в inspect |
+| P1-9 логи: два читателя, порядок, TTY | **верно** | `demuxStream` + `for await` читают один `Readable`; живой прогон: stderr-фрейм `02 …line-err` пришёл **до** stdout-фрейма `01 …line-out`, а с `-t` байты голые — `74 74 79 2d 6f 75 74 0d 0a` = `tty-out\r\n` |
+| P2-10 лимит = два бюджета | **верно** | два накопителя по `limitBytes` каждый + остановка на `limitBytes*2` |
+| P2-10b `tail=0` двусмысленен | **верно** | план передавал `tail` демону и резал им же локально |
+| P1-11 union кодов «TS не примет» | **отклонено** | `ssh-runner.ts` уже содержит `HOST_KEY_NOT_TRUSTED` (:10), `DOCKER_PERMISSION_DENIED` (:16), `DOCKER_SOCKET_UNREACHABLE` (:17); `HOST_KEY` (:8) — отдельный код классификатора, а не замена пину. В union добавляется ровно **один** код; `DOCKER_API_FAILED` из плана убран (ни разу не возвращается — YAGNI) |
+| P1-12 DoD «≠ 5xx» vs тест с 500 | **верно** | противоречие внутри самого плана (Task 4 Step 1 ждал `status: 500`) |
+| P2-13 `all` не валидируется, query теряется | **верно** | `all === 'true'` молча; `dockerRequests` резал query |
+| P2-14 тест `close()` ничего не проверяет | **верно** | `execs === 0` истинно тривиально; класс `DockerSshTransport` объявлен в интерфейсах, но создавался object literal |
+| P2-15 «ssh2 не заявлен как зависимость» | **отклонено** | `package.json`: `"ssh2": "^1.17.0"` в `dependencies`, `@types/ssh2 ^1.15.6` в `devDependencies` (добавлены в части 3). Добавлен шаг проверки единой версии |
+
+### P1-A. Дедлайн на всю Docker-операцию (заменяет Task 1 Step 5 и Task 2 Step 7 в части таймаутов)
+
+Транспорт владеет дедлайном, а не только handshake. Истечение дедлайна обязано: оборвать канал, закрыть SSH-коннект, убить агента и выдать `SshFailure('TIMEOUT')`, а не `500`.
+
+```ts
+// docker-agent.ts — вместо return { agent, close } в NodeSshRunner.dockerTransport
+export class DockerSshTransport implements DockerTransport {
+  readonly agent: http.Agent;
+  private timer: NodeJS.Timeout | null = null;
+  private expired = false;
+
+  constructor(
+    private readonly conn: Client,
+    deadlineMs: number,
+  ) {
+    this.agent = createDockerAgent(conn, () => undefined);
+    this.timer = setTimeout(() => this.expire(), deadlineMs);
+    this.timer.unref();
+  }
+
+  /** true, если транспорт уже нельзя использовать (дедлайн истёк или close). */
+  get dead(): boolean {
+    return this.expired;
+  }
+
+  private expire(): void {
+    this.expired = true;
+    this.teardown();
+  }
+
+  /** createConnection обязан вызывать перед каждым exec-каналом. */
+  assertAlive(): void {
+    if (this.expired) {
+      throw new SshFailure('TIMEOUT', 'docker api deadline exceeded');
+    }
+  }
+
+  close(): void {
+    this.teardown();
+  }
+
+  private teardown(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.agent.destroy();
+    this.conn.end();
+  }
+}
+```
+
+`createDockerAgent` получает вторым параметром не `onChannelError`, а `beforeConnect: () => void` (вызывается в `createConnection` до `conn.exec`) — тогда мёртвый транспорт не открывает канал.
+
+`withDocker` считает дедлайн один раз на запрос и не полагается на таймер внутри транспорта:
+
+```ts
+  private async withDocker<T>(
+    userId: string,
+    workspaceId: string,
+    serverId: string,
+    deadlineMs: number,
+    roles: WorkspaceRole[],
+    fn: (docker: Dockerode) => Promise<T>,
+  ): Promise<T> {
+    const { session } = await this.servers.loadForSsh(
+      userId,
+      workspaceId,
+      serverId,
+      roles,
+      'authenticated',
+    );
+    const transport = await this.openTransport(session, deadlineMs);
+    const docker = new Dockerode({ host: 'http://127.0.0.1:1', agent: transport.agent });
+    try {
+      return await fn(docker);
+    } finally {
+      transport.close();
+    }
+  }
+```
+
+`openTransport` обёртывает `SshFailure` в HTTP (`toHttp`), поэтому `TIMEOUT` уходит в `504` (см. P1-E), а не в `500`. Зависший Docker API убивается самим дедлайном транспорта; тесты обязательны на все четыре метода — см. P1-D.
+
+### P1-B. Реальная структура stats (заменяет фикстуру и `toStats` в Task 3 Step 5)
+
+Замерено на живом демоне 28.3.2 (`GET /containers/:id/stats?stream=false`):
+
+```jsonc
+{
+  "read": "2026-10-10T14:17:52.066724461Z",
+  "preread": "2026-10-10T14:17:51.061630169Z",
+  "cpu_stats": {
+    "cpu_usage": { "total_usage": 10249000, "usage_in_kernelmode": 0, "usage_in_usermode": 0 },
+    "system_cpu_usage": 74550000000,
+    "online_cpus": 4,
+    "throttling_data": {}
+  },
+  "precpu_stats": {
+    "cpu_usage": { "total_usage": 10249000 },
+    "system_cpu_usage": 70540000000,
+    "online_cpus": 4
+  },
+  "memory_stats": { "usage": 2260992, "limit": 4110372864, "stats": {} },
+  "blkio_stats": { "io_service_bytes_recursive": [
+      { "major": 254, "minor": 0, "op": "read", "value": 1523712 },
+      { "major": 254, "minor": 0, "op": "write", "value": 0 },
+      { "major": 254, "minor": 16, "op": "read", "value": 147456 }
+  ] },
+  "networks": { "eth0": { "rx_bytes": 1878, "tx_bytes": 126 } }
+}
+```
+
+Следствия, которых не было в черновике: `system_cpu_usage` — **число внутри `cpu_stats`/`precpu_stats`** (не объект и не на верхнем уровне); `online_cpus` там же; на этом демоне `cpu_usage.percpu_usage` **отсутствует**, значит fallback из документации (`len(percpu_usage)`) обязан вести себя как «нет данных», а не как «1 CPU»; блоки — в `blkio_stats.io_service_bytes_recursive` и их **несколько на один op** (по числу устройств) → суммировать, а не брать первый элемент.
+
+```ts
+export function toStats(containerId: string, raw: DockerStatsResponse): ContainerStats {
+  const cpu = raw.cpu_stats ?? {};
+  const pre = raw.precpu_stats ?? {};
+  const cpuDelta = num(cpu.cpu_usage?.total_usage) - num(pre.cpu_usage?.total_usage);
+  const sysDelta = num(cpu.system_cpu_usage) - num(pre.system_cpu_usage);
+  const cpus =
+    num(cpu.online_cpus) || (cpu.cpu_usage?.percpu_usage?.length ?? 0) || 0;
+  const cpuPercent =
+    cpuDelta > 0 && sysDelta > 0 && cpus > 0
+      ? round3((cpuDelta / sysDelta) * cpus * 100)
+      : null;
+  const net = Object.values(raw.networks ?? {})[0] ?? {};
+  const disk = ioByOp(raw.blkio_stats?.io_service_bytes_recursive);
+  return {
+    containerId,
+    readAt: isoFromNano(raw.read),
+    cpuPercent,
+    memoryUsageBytes: nullableNum(raw.memory_stats?.usage),
+    memoryLimitBytes: nullableNum(raw.memory_stats?.limit),
+    netRxBytes: nullableNum(net.rx_bytes),
+    netTxBytes: nullableNum(net.tx_bytes),
+    blkReadBytes: disk.read,
+    blkWriteBytes: disk.write,
+  };
+}
+
+/** Демон отдаёт по записи на устройство: значения одного op суммируются. */
+function ioByOp(entries?: Array<{ op: string; value: number }>): {
+  read: number | null;
+  write: number | null;
+} {
+  const sum = (op: string) =>
+    entries?.filter((e) => e.op === op).reduce((acc, e) => acc + num(e.value), 0);
+  return { read: sum('read') ?? null, write: sum('write') ?? null };
+}
+```
+
+Тест фикстуры — ровно приведённый выше JSON (id-замена не нужна), ожидаемое: `cpuPercent: null` (у спящего контейнера `cpuDelta = 0` — измерено!), `memoryUsageBytes: 2260992`, `blkReadBytes: 1671168` (1523712 + 147456, сумма по двум устройствам), `netRxBytes: 1878`. Отдельный тест с ненулевой дельтой: `cpu_usage.total_usage 2000→` при `system_cpu_usage 1000→` и `online_cpus 2` даёт `200`.
+
+### P1-C. Логи: один проход, порядок, TTY, единый бюджет (заменяет Task 3 Step 3–4)
+
+Ни `demuxStream` + `for await`, ни «stdout-потом-stderr» не годятся. Пишем свой читатель фреймов поверх одного потока, который кладёт строки в порядке прихода и расходует один общий бюджет байт UTF-8.
+
+```ts
+/**
+ * Docker отдаёт мультиплексированные фреймы (замерено: 02/01 + 3 нуля + длина BE32)
+ * и ГОЛЫЕ байты, у контейнера включён Tty (замерено: "tty-out\r\n" без заголовка).
+ * Признак TTY берём из inspect, а не из «похоже ли на заголовок»: у raw-потока
+ * первая строка может случайно начаться с 0x01.
+ */
+export async function readLogs(
+  stream: NodeJS.ReadableStream,
+  tty: boolean,
+  budgetBytes: number,
+): Promise<{ lines: LogLine[]; truncated: boolean }> {
+  const lines: LogLine[] = [];
+  let used = 0;
+  let truncated = false;
+  let buffer = Buffer.alloc(0);
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    buffer = Buffer.concat([buffer, chunk]);
+    const consumed = tty ? drainRaw(buffer, lines) : drainFrames(buffer, lines);
+    if (consumed === null) {
+      truncated = true; // бюджет исчерпан: остаток не читаем
+      buffer = Buffer.alloc(0);
+      break;
+    }
+    used += consumed.bytes;
+    buffer = consumed.rest;
+    if (used >= budgetBytes) {
+      truncated = true;
+      buffer = Buffer.alloc(0);
+      break;
+    }
+  }
+  return { lines: keepTail(lines, budgetBytes), truncated };
+}
+
+export interface LogLine {
+  stream: 'stdout' | 'stderr';
+  text: string;
+}
+```
+
+`drainFrames` разбирает заголовки `readUInt8(0)`/`readUInt32BE(4)` и возвращает `{bytes, rest}` либо `null`, если в `rest` ещё нет полного фрейма и при этом превышен бюджет; `drainRaw` режет по `\n` и помечает всё как `stdout` (при TTY демон смешивает потоки в один — другого варианта нет, и `stderr` в ответе будет `null`-потоком); `keepTail` оставляет последние строки, не превышая бюджет, и ставит `truncated`, если что-то отброшено (счёт **по байтам Buffer.byteLength, а не по `.length` строк** — иначе кириллица в съедает лимит вдвое).
+
+Контракт ответа меняется: `ContainerLogs = { containerId, tty: boolean, lines: Array<{stream, text}>, truncated, limitBytes }` — порядок сохраняется, потому что строки не разделяются на два буфера. `tty` узнаётся одним `inspect` перед `logs` (дополнительный вызов демона, но в пределах того же транспорта и дедлайна).
+
+`tail` больше не двусмыслен: `tail` из запроса уходит демону (`tail: N`) и **только там** режет история; локальный `keepTail` ограничен бюджетом и не принимает `tail`. `tail=0` = «демон отдаёт всё», и тогда работает только бюджет. Значение по умолчанию — `200`.
+
+Тесты (все — на одном потоке, порядок обязателен):
+
+```ts
+test('логи: порядок stdout/stderr сохраняется по фреймам', async () => {
+  const { docker, ssh, ownerId, workspaceId, serverId } = await ready({ tty: false });
+  ssh.dockerRawBodies['GET /containers/web/logs'] = Buffer.concat([
+    frame(2, 'err-1\n'), // demonstrативно первым: именно так приходит с демона
+    frame(1, 'out-1\n'),
+    frame(2, 'err-2\n'),
+  ]);
+  const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+  expect(logs.lines).toEqual([
+    { stream: 'stderr', text: 'err-1' },
+    { stream: 'stdout', text: 'out-1' },
+    { stream: 'stderr', text: 'err-2' },
+  ]);
+});
+
+test('логи: при tty заголовков нет — всё идёт в stdout как есть', async () => {
+  const { docker, ssh, ownerId, workspaceId, serverId } = await ready({ tty: true });
+  ssh.dockerRawBodies['GET /containers/web/logs'] = Buffer.from('tty-out\r\n');
+  const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+  expect(logs.tty).toBe(true);
+  expect(logs.lines).toEqual([{ stream: 'stdout', text: 'tty-out' }]);
+});
+
+test('логи: бюджет общий на оба потока и считается в байтах UTF-8', async () => {
+  const { docker, ssh, ownerId, workspaceId, serverId } = await ready({ tty: false });
+  ssh.cfgDockerLogsMaxBytes = 64;
+  ssh.dockerRawBodies['GET /containers/web/logs'] = Buffer.concat([
+    frame(1, 'привет-привет-привет\n'), // UTF-8 в два раза длиннее, чем .length
+    frame(2, 'x'.repeat(200) + '\n'),
+  ]);
+  const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+  const bytes = logs.lines.reduce((a, l) => a + Buffer.byteLength(l.text), 0);
+  expect(logs.truncated).toBe(true);
+  expect(bytes).toBeLessThanOrEqual(64);
+});
+```
+
+### P1-D. Тесты зависания на всех методах (добавляются в Task 4 Step 1 и Task 2/3)
+
+Для каждого из пяти методов — свой «висит» тест: `dockerHangPrefix` в двойнике не отвечает вовсе, дедлайн урезан в `testAppConfig({ dockerDeadlineMs: 50 })`, ожидание — `504` + `ssh.transportClosed === true`.
+
+```ts
+test.each(['list', 'details', 'logs', 'stats', 'act'] as const)(
+  '%s: зависший вызов демона прерывается дедлайном и закрывает транспорт (504, не 500)',
+  async (method) => {
+    const { docker, ssh, ownerId, workspaceId, serverId } = await ready({ hang: true });
+    await expect(call(docker, method)).rejects.toMatchObject({ status: 504 });
+    expect(ssh.transportClosed).toBe(true);
+  },
+);
+```
+
+### P1-E. Таблица ошибок (заменяет `mapDockerError` в Task 2 Step 7 и правит строку DoD)
+
+| Ситуация | Код | HTTP |
+|---|---|---|
+| нет строки сервера / чужой воркспейс | — | 404 |
+| роль не подходит под операцию | — | 403 |
+| host key не принят | `HOST_KEY_NOT_TRUSTED` | 424 |
+| ключ хоста сменился | `HOST_KEY_MISMATCH` | 424 |
+| docker отсутствует / нет прав / сокет молчит | `DOCKER_MISSING`/`DOCKER_PERMISSION_DENIED`/`DOCKER_SOCKET_UNREACHABLE` | 424 |
+| канал `dial-stdio` открылся, но демон ответил мусором | `DOCKER_UNREACHABLE` | 424 |
+| дедлайн истёк (handshake или зависший вызов) | `TIMEOUT` | 504 |
+| контейнера нет (404 от демона) | — | 404 |
+| неожиданный сбой приложения | — | 500 |
+
+`DOCKER_API_FAILED` из черновика удалён: ни один классификатор его не возвращает. Строка DoD «ошибки Docker ≠ 5xx» переформулирована честно: «ошибки Docker и транспорта дают 404/424/504 по таблице; 500 остаётся только для внутренних дефектов приложения», и ни один тест больше не ждёт `500` как ожидаемый результат Docker-сбоя (тест `restart` с зависанием переписан на 504).
+
+### P1-F. `exitCode` и `createdAt` (правят `toSummary`/`toDetails` в Task 2)
+
+```ts
+/** Number(null) === 0 — поэтому nullable-код завершения не оборачивается в Number. */
+export function parseExitCode(status: string, state: string): number | null {
+  const m = EXIT_CODE_RE.exec(status);
+  if (m) return Number(m[1]); // из «Exited (137) 5 minutes ago»
+  return null; // running/restarting/created: кода текущего запуска нет
+}
+```
+
+В списке поле переименовано в `createdAt` (`Created` из list API — время создания, проверено в ответе демона); `startedAt` живёт только в `ContainerDetails` и берётся из `State.StartedAt`. В `container.types.ts` соответствующо: `ContainerSummary.createdAt: string`, у `ContainerDetails` — `startedAt: string | null`.
+
+### P2-G. `all` как boolean и полный URL в двойнике (правит Task 5 Step 1 и Task 2 Step 6)
+
+```ts
+export class ContainersQueryDto {
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  all?: 'true' | 'false';
+}
+```
+
+Контроллер: `@Query() q: ContainersQueryDto` → `all: q.all === 'true'`; `?all=1`, `?all=yes` → 400 на валидации, а не молчаливый `false`. Двойник пишет в `dockerRequests` строку **вместе с query** (`GET /containers/json?all=true`), и тест списка проверяет точное значение, а не только путь.
+
+### P2-H. Настоящий тест жизненного цикла транспорта (заменяет третий тест в Task 1 Step 1)
+
+```ts
+test('close закрывает ssh-коннект и делает новые каналы невозможными', async () => {
+  let ended = 0;
+  let execs = 0;
+  const conn = {
+    exec: (_c: string, cb: (e: Error | null, s?: PassThrough) => void) => {
+      execs += 1;
+      cb(null, new PassThrough());
+    },
+    end: () => {
+      ended += 1;
+    },
+  } as unknown as Client;
+  const transport = new DockerSshTransport(conn, 5000);
+  await new Promise<void>((res) =>
+    transport.agent.createConnection({}, () => res()),
+  );
+  expect(execs).toBe(1);
+  transport.close();
+  expect(ended).toBe(1);
+  await new Promise<void>((res, rej) =>
+    transport.agent.createConnection({}, (err) => (err ? res() : rej(new Error('канал открылся после close')))),
+  );
+  expect(execs).toBe(1);
+  expect(transport.dead).toBe(true);
+});
+```
+
+Отдельный тест дедлайна: `new DockerSshTransport(conn, 10)` → `await sleep(30)` → `createConnection` приходит с ошибкой `SshFailure('TIMEOUT')` и `conn.end` вызван сам.
+
+### P2-I. Шаг проверки зависимостей (добавляется в Task 0 Step 2)
+
+`ssh2` уже прямая зависимость (`package.json`: `ssh2 ^1.17.0`, `@types/ssh2 ^1.15.6`, обе — из части 3), поэтому ничего не доустанавливаем; вместо этого фиксируем, что дерево не двучленное:
+
+```bash
+cd app/backend && npm ls ssh2 --depth=2
+```
+
+Expected: ровно одна версия `ssh2` в дереве (собственная `^1.17.0`); `node-ssh@13.2.1` использует ту же мажорную. Если npm вынесет дедупликацией две версии — задача блокируется, потому что `docker-agent.ts` работает с `Client` напрямую, а `node-ssh.runner.ts` — через обёртку, и расхождение версий даст два разных `Channel`.
+
+---
+
 ## Self-Review
 
 1. **Spec coverage.** Пять эндпоинтов `docs/mvp-scope.md` §4: list (Task 2), details (Task 2), logs (Task 3), stats (Task 3), restart (Task 4); роуты и shape — Task 5; DoD и живой smoke — Task 5/6. Из `API.md:43-62` сознательно не реализовано и не заглушено: `DELETE container`, `env`, `history`, `resources`, `exec`, `events`, `volumes`, `networks`, `images` — контроллер содержит ровно пять методов, стабов нет.
