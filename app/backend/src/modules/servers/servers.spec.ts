@@ -13,6 +13,7 @@ import { TokensService } from '../tokens/tokens.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { AppConfig } from '../../config/app.config';
+import { testAppConfig } from '../../config/testing/app-config.fixture';
 import type { CreateServerDto } from './dto/create-server.dto';
 import { CredentialCryptoService } from './credentials/credential-crypto.service';
 import { FakeSshRunner } from './ssh/fake-ssh.runner';
@@ -44,28 +45,6 @@ Jn3xv0Ltd2bg7dpB49IucUd46rH7UU70hm7cjwpYV0RNzlvULZ74oeQk4Q9+oImitHsvri
 4FNu+wF7pfP5y+KWeFBMWw0OTnEOcPao0iVI0=
 -----END OPENSSH PRIVATE KEY-----
 `;
-
-export function testAppConfig(
-  overrides: Partial<AppConfig['ssh']> = {},
-): AppConfig {
-  return {
-    ssh: {
-      connectTimeoutMs: 1500,
-      commandTimeoutMs: 1500,
-      installTimeoutMs: 3000,
-      agentVersion: '0.1.0',
-      heartbeatStaleSec: 60,
-      allowedPorts: [22, 2202],
-      allowLoopback: true,
-      ...overrides,
-    },
-    crypto: {
-      activeKey: { id: 'k1', key: Buffer.alloc(32, 7) },
-      oldKeys: new Map([['k0', Buffer.alloc(32, 6)]]),
-      ephemeralServerKey: false,
-    },
-  } as AppConfig;
-}
 
 describe('servers module', () => {
   let prisma: PrismaService;
@@ -719,10 +698,12 @@ describe('servers module', () => {
       await pin(created.id);
       ssh.respond(/docker version/, '27.3.1');
       const original = prisma.server.update.bind(prisma.server);
+      // Ноль параметров — валидная замена: JS-функция с меньшим числом аргументов
+      // присваивается любому call-signature, и `_args` не плодит неиспользуемую переменную.
       prisma.server.update = (() =>
         Promise.reject(
           new Error('connection terminated unexpectedly'),
-        )) as typeof prisma.server.update;
+        )) as unknown as typeof prisma.server.update;
       try {
         await expect(
           servers.testConnection(ownerId, workspaceId, created.id, {}),

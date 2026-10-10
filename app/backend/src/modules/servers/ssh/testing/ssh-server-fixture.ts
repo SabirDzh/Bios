@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { Server, utils, type Connection, type ServerChannel } from 'ssh2';
 import { hostKeyFingerprint } from '../host-key';
@@ -7,6 +8,12 @@ export interface FixtureOptions {
   /** Принимать ли password-аутентификацию с этим паролем. */
   password?: string;
   exec?: { stdout?: string; stderr?: string; code?: number };
+  /**
+   * Порт локального мока Docker API: exec-канал `docker system dial-stdio`
+   * трубится в него в обе стороны, поэтому транспорт проверяется целиком —
+   * ssh2, KEX, пин, канал и разбор ответа dockerode — без настоящего демона.
+   */
+  dialStdioPort?: number;
   /**
    * 'reject-auth' — метод не принимаем никогда;
    * 'hang-auth' — на аутентификацию не отвечаем (срабатывает readyTimeout клиента);
@@ -19,6 +26,10 @@ export interface SshFixture {
   port: number;
   fingerprint: string;
   authAttempts: number;
+  /** Сколько раз клиент прошёл KEX и аутентифицировался (на соединение). */
+  connections: number;
+  /** SSH session channel: их несколько на одно соединение (по одному на exec). */
+  sessions: number;
   execRequests: string[];
   closedConnections: number;
   close(): Promise<void>;
@@ -50,6 +61,8 @@ export async function startSshFixture(
     port: 0,
     fingerprint: hostKeyFingerprint(publicBlob),
     authAttempts: 0,
+    connections: 0,
+    sessions: 0,
     execRequests: [],
     closedConnections: 0,
     close: () => Promise.resolve(),
@@ -63,6 +76,7 @@ export async function startSshFixture(
   const server = new Server(
     { hostKeys: [Buffer.from(privateKey)] },
     (client: Connection) => {
+      fixture.connections += 1;
       live.add(client);
       client.on('close', () => {
         live.delete(client);
@@ -87,9 +101,31 @@ export async function startSshFixture(
         ctx.accept();
       });
       client.on('session', (accept) => {
+        fixture.sessions += 1;
         if (behavior === 'hang-exec') return; // канал не открываем: команда висит
         const session = accept();
         session.on('exec', (execAccept, _reject, info) => {
+          if (
+            options.dialStdioPort &&
+            info.command === 'docker system dial-stdio'
+          ) {
+            const channel: ServerChannel = execAccept();
+            fixture.execRequests.push(info.command);
+            const tcp = net.connect(options.dialStdioPort, '127.0.0.1');
+            // Оба направления канала; закрытие любой стороны гасит другую.
+            channel.pipe(tcp).pipe(channel);
+            for (const side of [channel, tcp]) {
+              side.on('error', () => {
+                tcp.destroy();
+                channel.close();
+              });
+              side.on('close', () => {
+                tcp.destroy();
+                channel.close();
+              });
+            }
+            return;
+          }
           const stream: ServerChannel = execAccept();
           fixture.execRequests.push(info.command);
           stream.stderr.write(options.exec?.stderr ?? '');

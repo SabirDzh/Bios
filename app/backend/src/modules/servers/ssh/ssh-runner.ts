@@ -15,6 +15,7 @@ export type SshErrorCode =
   | 'DOCKER_MISSING'
   | 'DOCKER_PERMISSION_DENIED'
   | 'DOCKER_SOCKET_UNREACHABLE'
+  | 'DOCKER_UNREACHABLE'
   | 'SYSTEMD_MISSING'
   | 'SUDO_REQUIRED'
   | 'MANIFEST_INVALID'
@@ -56,12 +57,30 @@ export interface SshExecResult {
   code: number | null;
 }
 
+/**
+ * Транспорт Docker API: http.Agent поверх ОДНОГО ssh2-соединения. Обязан
+ * закрываться в finally — иначе коннект переживёт HTTP-запрос панели.
+ */
+export interface DockerTransport {
+  readonly agent: import('node:http').Agent;
+  readonly dead: boolean;
+  close(): void;
+}
+
 export interface SshRunner {
   exec(
     session: SshSession,
     command: string,
     timeoutMs: number,
   ): Promise<SshExecResult>;
+  /**
+   * deadlineMs накрывает ВСЮ Docker-операцию (handshake + каждый вызов API),
+   * а не только установление соединения.
+   */
+  dockerTransport(
+    session: SshSession,
+    deadlineMs: number,
+  ): Promise<DockerTransport>;
 }
 
 export const SSH_RUNNER = Symbol('SSH_RUNNER');
