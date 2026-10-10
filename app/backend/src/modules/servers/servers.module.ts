@@ -6,6 +6,7 @@ import { ComposeModule } from './compose/compose.module';
 import { GitModule } from './git/git.module';
 import { ServersController } from './servers.controller';
 import { ServersService } from './servers.service';
+import { AgentService } from './agent.service';
 import { CredentialCryptoService } from './credentials/credential-crypto.service';
 import { NodeSshRunner } from './ssh/node-ssh.runner';
 import { SSH_RUNNER } from './ssh/ssh-runner';
@@ -21,6 +22,7 @@ import { SSH_RUNNER } from './ssh/ssh-runner';
   controllers: [ServersController],
   providers: [
     ServersService,
+    AgentService,
     CredentialCryptoService,
     { provide: SSH_RUNNER, useClass: NodeSshRunner },
   ],

@@ -18,6 +18,7 @@ import { CredentialCryptoService } from './credentials/credential-crypto.service
 import { FakeSshRunner } from './ssh/fake-ssh.runner';
 import { SshFailure, type SshErrorCode } from './ssh/ssh-runner';
 import { MEMBER_ROLES, ServersService } from './servers.service';
+import { AgentService } from './agent.service';
 
 const TEST_DB_URL =
   'postgresql://sabir@localhost:5432/bios_test_servers?schema=public';
@@ -722,6 +723,361 @@ describe('servers module', () => {
       await expect(
         servers.testConnection(memberId, workspaceId, created.id, {}),
       ).resolves.toMatchObject({ trustRequired: true });
+    });
+  });
+
+  describe('agent', () => {
+    let agent: AgentService;
+    const observed = `SHA256:${'C'.repeat(43)}`;
+
+    beforeEach(() => {
+      agent = new AgentService(servers, prisma, ssh, testAppConfig());
+    });
+
+    const notInstalled =
+      'SD=ok\nMF=absent\nJSON=-\nUNIT=no-unit\nHB=-\nNOW=1700000000\n';
+
+    const active = (
+      serverId: string,
+      opts: {
+        version?: string;
+        hb?: string;
+        now?: string;
+        unit?: string;
+        sd?: string;
+      } = {},
+    ): string =>
+      [
+        `SD=${opts.sd ?? 'ok'}`,
+        'MF=present',
+        `JSON={"version":"${opts.version ?? '0.1.0'}","workspaceId":"${workspaceId}","serverId":"${serverId}"}`,
+        `UNIT=${opts.unit ?? 'active'}`,
+        `HB=${opts.hb ?? '1699999990'}`,
+        `NOW=${opts.now ?? '1699999995'}`,
+      ].join('\n');
+
+    /** Сервер с уже принятым host key — иначе и install, и status получают 424. */
+    async function trustedServer(name = 'prod-1'): Promise<string> {
+      const created = await servers.create(
+        ownerId,
+        workspaceId,
+        dtoFor({ name }),
+      );
+      await prisma.server.update({
+        where: { id: created.id },
+        data: { hostKeyFingerprint: observed },
+      });
+      return created.id;
+    }
+
+    test('install: read→script→read, ACTIVE и совпадение версии → INSTALLED', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(/systemctl is-active/, active(serverId));
+
+      const result = await agent.install(ownerId, workspaceId, serverId);
+      expect(result.outcome).toBe('INSTALLED');
+      expect(result.agent).toMatchObject({
+        status: 'ACTIVE',
+        version: '0.1.0',
+        errorCode: null,
+      });
+
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.agentVersion).toBe('0.1.0');
+      expect(row.agentInstalledAt).toBeInstanceOf(Date);
+      expect(row.lastAgentStatus).toBe('ACTIVE');
+      expect(row.status).toBe('ONLINE');
+
+      expect(ssh.commands).toHaveLength(3);
+      expect(ssh.commands[1]).toContain('systemctl enable bios-agent.service');
+      expect(ssh.commands[1]).toContain(`"serverId":"${serverId}"`);
+      expect(ssh.commands[1]).toContain('sudo -n'); // sshUsername = deploy
+      expect(ssh.commands.join('\n')).not.toContain('sup3rsecret');
+    });
+
+    test('install под root: без sudo-обёрток', async () => {
+      const created = await servers.create(
+        ownerId,
+        workspaceId,
+        dtoFor({ sshUsername: 'root' }),
+      );
+      await prisma.server.update({
+        where: { id: created.id },
+        data: { hostKeyFingerprint: observed },
+      });
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(/systemctl is-active/, active(created.id));
+      await agent.install(ownerId, workspaceId, created.id);
+      expect(ssh.commands[1]).not.toContain('sudo -n');
+    });
+
+    test('повторный install: ALREADY_ACTIVE, скрипт не запускается', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(/systemctl is-active/, active(serverId));
+      await agent.install(ownerId, workspaceId, serverId);
+      expect(ssh.commands).toHaveLength(3);
+
+      ssh.respond(/systemctl is-active/, active(serverId));
+      const second = await agent.install(ownerId, workspaceId, serverId);
+      expect(second.outcome).toBe('ALREADY_ACTIVE');
+      expect(ssh.commands).toHaveLength(4);
+    });
+
+    test('install: юнит поднялся, но версия другая → 424 AGENT_VERSION_MISMATCH, installedAt не выставлен', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(
+        /systemctl is-active/,
+        active(serverId, { version: '0.0.9' }),
+      );
+      await expect(
+        agent.install(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'AGENT_VERSION_MISMATCH' },
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.agentInstalledAt).toBeNull();
+      expect(row.lastAgentStatus).toBe('ACTIVE'); // диагностику сохранили, успех не заявили
+    });
+
+    test('install: после скрипта юнит не активен → 424 AGENT_NOT_RUNNING', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(/systemctl is-active/, active(serverId, { unit: 'failed' }));
+      await expect(
+        agent.install(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'AGENT_NOT_RUNNING' },
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.lastAgentStatus).toBe('FAILED');
+      expect(row.agentInstalledAt).toBeNull();
+    });
+
+    test('install: heartbeat не поспел → 424 AGENT_HEARTBEAT_STALE', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(
+        /systemctl is-active/,
+        active(serverId, { hb: '1699900000', now: '1699999995' }),
+      );
+      await expect(
+        agent.install(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'AGENT_HEARTBEAT_STALE' },
+      });
+    });
+
+    test('install: файл манифеста есть, но пустой → 424 MANIFEST_INVALID', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '');
+      ssh.respond(
+        /systemctl is-active/,
+        'SD=ok\nMF=present\nJSON=-\nUNIT=active\nHB=-\nNOW=1700000000\n',
+      );
+      await expect(
+        agent.install(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'MANIFEST_INVALID' },
+      });
+    });
+
+    test('install: префлайт 45 → 424 DOCKER_PERMISSION_DENIED, хост остаётся reachable, агент — нет', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(/systemctl is-active/, notInstalled);
+      ssh.respond(/systemctl daemon-reload/, '', {
+        code: 45,
+        stderr:
+          'permission denied while trying to connect to the Docker daemon socket\nBIOS_ERR_DOCKER_PERM\n',
+      });
+      await expect(
+        agent.install(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'DOCKER_PERMISSION_DENIED' },
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.status).toBe('ONLINE'); // ось SSH не упала: мы соединились и получили отказ хоста
+      expect(row.lastAgentErrorCode).toBe('DOCKER_PERMISSION_DENIED');
+    });
+
+    test('status: NOT_INSTALLED не трогает ось доступности хоста', async () => {
+      const serverId = await trustedServer();
+      await prisma.server.update({
+        where: { id: serverId },
+        data: { status: 'ONLINE' },
+      });
+      ssh.respond(/systemctl is-active/, notInstalled);
+      const result = await agent.status(ownerId, workspaceId, serverId);
+      expect(result).toMatchObject({
+        status: 'NOT_INSTALLED',
+        errorCode: null,
+        version: null,
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.status).toBe('ONLINE');
+      expect(row.lastAgentStatus).toBe('NOT_INSTALLED');
+    });
+
+    test('status: FAILED и STALE различимы, хост при этом ONLINE', async () => {
+      const serverId = await trustedServer();
+      await prisma.server.update({
+        where: { id: serverId },
+        data: { status: 'ONLINE' },
+      });
+      ssh.respond(/systemctl is-active/, active(serverId, { unit: 'failed' }));
+      expect(await agent.status(ownerId, workspaceId, serverId)).toMatchObject({
+        status: 'FAILED',
+        errorCode: 'AGENT_NOT_RUNNING',
+      });
+      ssh.respond(
+        /systemctl is-active/,
+        active(serverId, { hb: '1699900000', now: '1699999995' }),
+      );
+      expect(await agent.status(ownerId, workspaceId, serverId)).toMatchObject({
+        status: 'STALE',
+        errorCode: 'AGENT_HEARTBEAT_STALE',
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.status).toBe('ONLINE');
+      expect(row.lastAgentStatus).toBe('STALE');
+    });
+
+    test('status: агент чужого сервера на том же хосте → FAILED + IDENTITY_MISMATCH', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(
+        /systemctl is-active/,
+        active('01912345-6789-7abc-aef0-1234567890ff'),
+      );
+      const result = await agent.status(ownerId, workspaceId, serverId);
+      expect(result).toMatchObject({
+        status: 'FAILED',
+        errorCode: 'IDENTITY_MISMATCH',
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: serverId },
+      });
+      expect(row.agentVersion).toBeNull();
+    });
+
+    test('status: systemd отсутствует → FAILED + SYSTEMD_MISSING (не NOT_INSTALLED, ревью №6)', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(
+        /systemctl is-active/,
+        `SD=missing\nMF=present\nJSON={"version":"0.1.0","workspaceId":"${workspaceId}","serverId":"${serverId}"}\nUNIT=inactive\nHB=1699999990\nNOW=1699999995\n`,
+      );
+      expect(await agent.status(ownerId, workspaceId, serverId)).toMatchObject({
+        status: 'FAILED',
+        errorCode: 'SYSTEMD_MISSING',
+      });
+    });
+
+    test('status: хост выдал мусор вместо протокола → 424 READ_FAILED', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(
+        /systemctl is-active/,
+        'bash: line 3: printf: command not found\n',
+      );
+      await expect(
+        agent.status(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'READ_FAILED' },
+      });
+    });
+
+    test('status: ненулевой код удалённой команды → 424 READ_FAILED', async () => {
+      const serverId = await trustedServer();
+      ssh.respond(
+        /systemctl is-active/,
+        'SD=ok\nMF=absent\nJSON=-\nUNIT=no-unit\nHB=-\n',
+        { code: 2 },
+      );
+      await expect(
+        agent.status(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'READ_FAILED' },
+      });
+    });
+
+    test('сбой транспорта → 424 с кодом, без 5xx', async () => {
+      const serverId = await trustedServer();
+      ssh.fail(
+        /systemctl is-active/,
+        new SshFailure('TIMEOUT', 'ssh operation timed out'),
+      );
+      await expect(
+        agent.status(ownerId, workspaceId, serverId),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'TIMEOUT' },
+      });
+    });
+
+    test('без принятого host key оба роута дают 424, канал не тронут', async () => {
+      const created = await servers.create(ownerId, workspaceId, dtoFor());
+      await expect(
+        agent.status(ownerId, workspaceId, created.id),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'HOST_KEY_NOT_TRUSTED' },
+      });
+      await expect(
+        agent.install(ownerId, workspaceId, created.id),
+      ).rejects.toMatchObject({
+        status: 424,
+        response: { errorCode: 'HOST_KEY_NOT_TRUSTED' },
+      });
+      expect(ssh.commands).toHaveLength(0);
+    });
+
+    test('чужой сервер → 404; MEMBER читает статус, но не ставит', async () => {
+      const serverId = await trustedServer();
+      const outsider = await extraUser('srvout4');
+      await expect(
+        agent.status(outsider, workspaceId, serverId),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        agent.install(outsider, workspaceId, serverId),
+      ).rejects.toThrow(NotFoundException);
+
+      const memberId = await inviteAndAccept('srvmember3@example.com');
+      ssh.respond(/systemctl is-active/, notInstalled);
+      await expect(
+        agent.status(memberId, workspaceId, serverId),
+      ).resolves.toMatchObject({ status: 'NOT_INSTALLED' });
+      await expect(
+        agent.install(memberId, workspaceId, serverId),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        ssh.commands.filter((c) => c.includes('systemctl daemon-reload')),
+      ).toHaveLength(0);
     });
   });
 });

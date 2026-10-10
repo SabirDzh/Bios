@@ -13,6 +13,7 @@ import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { WorkspaceIdDto } from '../workspaces/dto/workspace-id.dto';
 import { ServersService } from './servers.service';
+import { AgentService } from './agent.service';
 import { CreateServerDto } from './dto/create-server.dto';
 import { ServerIdsDto } from './dto/server-ids.dto';
 import { TestServerDto } from './dto/test-server.dto';
@@ -20,7 +21,10 @@ import { TestServerDto } from './dto/test-server.dto';
 @Controller('workspaces/:workspaceId/servers')
 @UseGuards(JwtAuthGuard)
 export class ServersController {
-  constructor(private readonly serversService: ServersService) {}
+  constructor(
+    private readonly serversService: ServersService,
+    private readonly agentService: AgentService,
+  ) {}
 
   @Post()
   create(
@@ -58,6 +62,26 @@ export class ServersController {
       params.workspaceId,
       params.serverId,
       dto,
+    );
+  }
+
+  @Post(':serverId/agent/install')
+  @ThrottleProfile('sshOps')
+  installAgent(@User() user: JwtUserPayload, @Param() params: ServerIdsDto) {
+    return this.agentService.install(
+      user.userId,
+      params.workspaceId,
+      params.serverId,
+    );
+  }
+
+  @Get(':serverId/agent')
+  @ThrottleProfile('sshOps')
+  agent(@User() user: JwtUserPayload, @Param() params: ServerIdsDto) {
+    return this.agentService.status(
+      user.userId,
+      params.workspaceId,
+      params.serverId,
     );
   }
 }
