@@ -20,20 +20,57 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 import { CredentialCryptoService } from './credentials/credential-crypto.service';
+import { classifySshError } from './ssh/classify-ssh-error';
 import { resolveTarget } from './ssh/network-policy';
+import { buildDockerVersionCommand } from './agent/agent-script';
 import {
   SSH_RUNNER,
   SshFailure,
+  type SshErrorCode,
+  type SshExecResult,
   type SshRunner,
   type SshSession,
 } from './ssh/ssh-runner';
 import type { CreateServerDto } from './dto/create-server.dto';
+import type { TestServerDto } from './dto/test-server.dto';
 
 export const MEMBER_ROLES: WorkspaceRole[] = [
   WorkspaceRole.OWNER,
   WorkspaceRole.MEMBER,
 ];
 export const OWNER_ONLY_ROLES: WorkspaceRole[] = [WorkspaceRole.OWNER];
+
+export interface ServerTestResponse {
+  serverId: string;
+  reachable: boolean;
+  trustRequired: boolean;
+  status: ServerStatus;
+  latencyMs: number;
+  dockerVersion: string | null;
+  dockerErrorCode: SshErrorCode | null;
+  errorCode: SshErrorCode | null;
+  hostKeyFingerprint: string | null;
+  checkedAt: Date;
+}
+
+/** Вывод docker-version принимаем только как NN[.NN]*(-rc)? — не произвольный текст хоста. */
+const DOCKER_VERSION_RE = /^\d+(?:\.\d+){0,3}(?:-[0-9A-Za-z.]+)?$/;
+
+/** Почему Docker не отвечает — три разных диагноза, не один «DOCKER_MISSING» (ревью №5). */
+export function classifyDockerFailure(
+  code: number | null,
+  stderr: string,
+): SshErrorCode {
+  const lower = stderr.toLowerCase();
+  if (code === 127 || lower.includes('command not found')) {
+    return 'DOCKER_MISSING';
+  }
+  if (lower.includes('permission denied')) return 'DOCKER_PERMISSION_DENIED';
+  if (lower.includes('cannot connect to the docker daemon')) {
+    return 'DOCKER_SOCKET_UNREACHABLE';
+  }
+  return 'COMMAND_FAILED';
+}
 
 export interface ServerResponse {
   id: string;
@@ -150,6 +187,147 @@ export class ServersService {
   }
 
   /**
+   * POST .../test. Недоступный хост — легитимный результат (200 reachable:false),
+   * а не ошибка клиента; 5xx остаётся только внутренним сбоям (БД, код).
+   */
+  async testConnection(
+    userId: string,
+    workspaceId: string,
+    serverId: string,
+    dto: TestServerDto,
+  ): Promise<ServerTestResponse> {
+    const startedAt = Date.now();
+    const checkedAt = new Date();
+
+    // Пина нет — сначала probe: при expectedHostKeyFingerprint === null верификатор
+    // всегда возвращает false, поэтому аутентификации на этом шаге не происходит.
+    const probe = await this.loadForSsh(
+      userId,
+      workspaceId,
+      serverId,
+      MEMBER_ROLES,
+      'probe',
+    );
+    if (!probe.server.hostKeyFingerprint) {
+      let failure: SshFailure | null = null;
+      try {
+        await this.ssh.exec(
+          probe.session,
+          'true',
+          this.cfg.ssh.connectTimeoutMs,
+        );
+      } catch (err) {
+        if (!(err instanceof SshFailure)) throw err;
+        failure = err;
+      }
+
+      const observed = failure?.observedHostKeyFingerprint ?? null;
+      if (observed === null) {
+        // Рукопожатие не дошло до ключа хоста: это сетевой отказ, а не «ключ не подтверждён».
+        await this.recordProbe(serverId, ServerStatus.OFFLINE, null, checkedAt);
+        return this.unreachableResult(
+          serverId,
+          failure ??
+            new SshFailure('NETWORK', 'host key probe observed no host key'),
+          Date.now() - startedAt,
+          checkedAt,
+        );
+      }
+
+      if (!dto.trustHostKey) {
+        await this.saveProbe(serverId, { lastCheckedAt: checkedAt });
+        return {
+          serverId,
+          reachable: false,
+          trustRequired: true,
+          status: probe.server.status,
+          latencyMs: Date.now() - startedAt,
+          dockerVersion: null,
+          dockerErrorCode: null,
+          errorCode: 'HOST_KEY_NOT_TRUSTED',
+          hostKeyFingerprint: observed,
+          checkedAt,
+        };
+      }
+      if (dto.trustHostKey !== observed) {
+        throw new ConflictException('host key fingerprint does not match');
+      }
+      await this.saveProbe(serverId, {
+        hostKeyFingerprint: observed,
+        lastCheckedAt: checkedAt,
+      });
+    }
+
+    const { server, session } = await this.loadForSsh(
+      userId,
+      workspaceId,
+      serverId,
+      MEMBER_ROLES,
+      'authenticated',
+    );
+
+    let exec: SshExecResult;
+    try {
+      exec = await this.ssh.exec(
+        session,
+        buildDockerVersionCommand(),
+        this.cfg.ssh.commandTimeoutMs,
+      );
+    } catch (err) {
+      await this.recordProbe(serverId, ServerStatus.OFFLINE, null, checkedAt);
+      return this.unreachableResult(
+        serverId,
+        err,
+        Date.now() - startedAt,
+        checkedAt,
+      );
+    }
+
+    const latencyMs = Date.now() - startedAt;
+    const hostKeyFingerprint = server.hostKeyFingerprint;
+    if (exec.code !== 0) {
+      // Хост доступен, Docker — нет: это разные оси, статус остаётся ONLINE.
+      const dockerErrorCode = classifyDockerFailure(exec.code, exec.stderr);
+      await this.recordProbe(serverId, ServerStatus.ONLINE, null, checkedAt);
+      return {
+        serverId,
+        reachable: true,
+        trustRequired: false,
+        status: ServerStatus.ONLINE,
+        latencyMs,
+        dockerVersion: null,
+        dockerErrorCode,
+        errorCode: null,
+        hostKeyFingerprint,
+        checkedAt,
+      };
+    }
+
+    const candidate = exec.stdout.trim();
+    const dockerVersion = DOCKER_VERSION_RE.test(candidate)
+      ? candidate.slice(0, 32)
+      : null;
+    await this.recordProbe(
+      serverId,
+      ServerStatus.ONLINE,
+      dockerVersion,
+      checkedAt,
+    );
+    return {
+      serverId,
+      reachable: true,
+      trustRequired: false,
+      status: ServerStatus.ONLINE,
+      latencyMs,
+      dockerVersion,
+      dockerErrorCode: null,
+      errorCode: null,
+      hostKeyFingerprint,
+      checkedAt,
+    };
+  }
+
+  /**
    * Скоупинг + политика + строка + сессия.
    * purpose='probe' — проверяем host key, креденшелы не отправляем;
    * 'authenticated' — требует уже принятый отпечаток.
@@ -214,6 +392,55 @@ export class ServersService {
           purpose === 'probe' ? null : server.hostKeyFingerprint,
       },
     };
+  }
+
+  private unreachableResult(
+    serverId: string,
+    err: unknown,
+    latencyMs: number,
+    checkedAt: Date,
+  ): ServerTestResponse {
+    const failure = err instanceof SshFailure ? err : null;
+    return {
+      serverId,
+      reachable: false,
+      trustRequired: false,
+      status: ServerStatus.OFFLINE,
+      latencyMs,
+      dockerVersion: null,
+      dockerErrorCode: null,
+      errorCode: failure ? failure.code : classifySshError(err),
+      hostKeyFingerprint: failure?.observedHostKeyFingerprint ?? null,
+      checkedAt,
+    };
+  }
+
+  private async recordProbe(
+    serverId: string,
+    status: ServerStatus,
+    dockerVersion: string | null,
+    checkedAt: Date,
+  ): Promise<void> {
+    await this.saveProbe(serverId, {
+      status,
+      dockerVersion,
+      lastCheckedAt: checkedAt,
+    });
+  }
+
+  /** Сбой персистентности — это 500, а не «хост недоступен» (ревью №7). */
+  private async saveProbe(
+    serverId: string,
+    data: Prisma.ServerUpdateInput,
+  ): Promise<void> {
+    try {
+      await this.prisma.server.update({ where: { id: serverId }, data });
+    } catch (err) {
+      throw new InternalServerErrorException(
+        'server probe result could not be saved',
+        { cause: err },
+      );
+    }
   }
 
   /** И «нет строки», и «строка чужого воркспейса» — 404 без различия. */

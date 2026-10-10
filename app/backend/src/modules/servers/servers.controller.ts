@@ -1,11 +1,21 @@
-import { Controller, Get, Param, Post, Body, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { WorkspaceIdDto } from '../workspaces/dto/workspace-id.dto';
 import { ServersService } from './servers.service';
 import { CreateServerDto } from './dto/create-server.dto';
 import { ServerIdsDto } from './dto/server-ids.dto';
+import { TestServerDto } from './dto/test-server.dto';
 
 @Controller('workspaces/:workspaceId/servers')
 @UseGuards(JwtAuthGuard)
@@ -32,6 +42,22 @@ export class ServersController {
       user.userId,
       params.workspaceId,
       params.serverId,
+    );
+  }
+
+  @Post(':serverId/test')
+  @HttpCode(200)
+  @ThrottleProfile('sshOps')
+  test(
+    @User() user: JwtUserPayload,
+    @Param() params: ServerIdsDto,
+    @Body() dto: TestServerDto,
+  ) {
+    return this.serversService.testConnection(
+      user.userId,
+      params.workspaceId,
+      params.serverId,
+      dto,
     );
   }
 }
