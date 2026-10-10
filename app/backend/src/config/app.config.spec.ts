@@ -24,6 +24,7 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     const cfg = loadAppConfig(withKeys());
     expect(cfg.app.port).toBe(3000);
     expect(cfg.app.isProduction).toBe(false);
+    expect(cfg.app.trustProxy).toBe(false);
     expect(cfg.cors.origins).toEqual([
       'http://localhost:5173',
       'http://localhost:1420',
@@ -60,6 +61,9 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       ['PORT', 'abc'],
       ['PORT', '0'],
       ['PORT', '99999'],
+      ['TRUST_PROXY', 'true'],
+      ['TRUST_PROXY', '0x1'],
+      ['TRUST_PROXY', 'evil.com'],
       ['THROTTLE_GLOBAL_LIMIT', '0'],
       ['THROTTLE_GLOBAL_TTL_MS', '-5'],
       ['JWT_ACCESS_TTL_SEC', '0'],
@@ -109,6 +113,18 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(app.jwt.issuer).toBe(direct.issuer);
     expect(app.jwt.audience).toBe(direct.audience);
     expect(app.jwt.clockToleranceSec).toBe(direct.clockToleranceSec);
+  });
+
+  test('TRUST_PROXY parses hops and subnets, rejects blind true', () => {
+    expect(loadAppConfig(withKeys({ TRUST_PROXY: '1' })).app.trustProxy).toBe(
+      1,
+    );
+    expect(
+      loadAppConfig(withKeys({ TRUST_PROXY: '10.0.0.0/8' })).app.trustProxy,
+    ).toBe('10.0.0.0/8');
+    expect(
+      loadAppConfig(withKeys({ TRUST_PROXY: 'false' })).app.trustProxy,
+    ).toBe(false);
   });
 
   test('env overrides apply', () => {

@@ -12,6 +12,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api/v1');
+  // Доверие прокси — только явно из конфига (дефолт false: слушаем напрямую).
+  // Слепое trust proxy=true запрещено: см. parseTrustProxy.
+  if (appConfig.app.trustProxy !== false) {
+    const server = app.getHttpAdapter().getInstance() as {
+      set(key: string, value: unknown): unknown;
+    };
+    server.set('trust proxy', appConfig.app.trustProxy);
+  }
   app.use(helmet());
   app.use(compression());
   app.use(cookieParser());

@@ -46,7 +46,11 @@ export interface CryptoCfg {
 }
 
 export interface AppConfig {
-  app: { port: number; isProduction: boolean };
+  app: {
+    port: number;
+    isProduction: boolean;
+    trustProxy: false | number | string;
+  };
   cors: { origins: string[] };
   throttle: {
     global: ThrottleProfileCfg;
@@ -101,6 +105,36 @@ function positiveInt(
     );
   }
   return parsed;
+}
+
+/**
+ * Доверие прокси для Express (`trust proxy`): влияет на req.ip и throttling.
+ * `false` (дефолт) — напрямую, без прокси. Число — количество хопов,
+ * строка — IP/подсеть доверенного прокси. Голое `true` запрещено сознательно:
+ * слепое доверие X-Forwarded-For из интернета даёт IP-spoofing.
+ */
+function parseTrustProxy(raw: string | undefined): false | number | string {
+  if (raw === undefined || raw === '') return false;
+  const value = raw.trim().toLowerCase();
+  if (value === 'false' || value === '0') return false;
+  if (value === 'true') {
+    throw new Error(
+      'Invalid TRUST_PROXY="true": use hop count (e.g. "1") or proxy IP/subnet instead of blind trust',
+    );
+  }
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    if (hops < 1 || hops > 10) {
+      throw new Error(`Invalid TRUST_PROXY="${raw}": hop count 1-10`);
+    }
+    return hops;
+  }
+  if (/^[0-9a-fA-F:.,/ ]+$/.test(value) && value.length <= 256) {
+    return raw.trim();
+  }
+  throw new Error(
+    `Invalid TRUST_PROXY="${raw}": expected false, hop count or IP/subnet`,
+  );
 }
 
 function parseOrigins(
@@ -435,7 +469,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   };
 
   return {
-    app: { port, isProduction },
+    app: { port, isProduction, trustProxy: parseTrustProxy(env.TRUST_PROXY) },
     cors: { origins: parseOrigins(env.CORS_ORIGINS, isProduction) },
     throttle: {
       global: parseThrottle(env, 'THROTTLE_GLOBAL', {
