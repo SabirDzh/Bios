@@ -31,9 +31,9 @@ services:
         postgresql://${POSTGRES_USER:-bios}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD env}@postgres:5432/${POSTGRES_DB:-bios}?schema=public
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SERVER_CRYPTO_KEY_FILE: /run/secrets/server_crypto_key
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://tauri.localhost}
       EMAIL_VERIFY_MX: ${EMAIL_VERIFY_MX:-true}
-      SERVER_CRYPTO_KEY: ${SERVER_CRYPTO_KEY:?set SERVER_CRYPTO_KEY env}
       SERVER_CRYPTO_KEY_ID: ${SERVER_CRYPTO_KEY_ID:-k1}
       SERVER_CRYPTO_OLD_KEYS: ${SERVER_CRYPTO_OLD_KEYS:-}
       SSH_ALLOWED_PORTS: ${SSH_ALLOWED_PORTS:-22}
@@ -43,12 +43,19 @@ services:
     secrets:
       - jwt_private_key
       - jwt_public_key
+      - server_crypto_key
 
 secrets:
+  # Генерация ключа шифрования (32 байта, base64):
+  #   openssl rand -base64 32 > secrets/server_crypto.key
+  #   chmod 600 secrets/server_crypto.key
+  # Потеря файла = все сохранённые SSH-секреты мертвы (бэкапить отдельно от БД).
   jwt_private_key:
     file: ./secrets/jwt_private.pem
   jwt_public_key:
     file: ./secrets/jwt_public.pem
+  server_crypto_key:
+    file: ./secrets/server_crypto.key
 
 volumes:
   pgdata:

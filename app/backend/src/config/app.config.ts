@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { CronJob } from 'cron';
 import { AUTH_CONFIG } from '../modules/auth/auth.config';
 import type { AuthConfig } from '../modules/auth/auth.config';
@@ -166,6 +167,31 @@ function decodeKey(raw: string, name: string): Buffer {
 }
 
 /**
+ * Активный ключ: либо `SERVER_CRYPTO_KEY`, либо файл `SERVER_CRYPTO_KEY_FILE
+ * (Docker secrets и т.п. — ключ не светится в env/inspect). Оба сразу — ошибка.
+ */
+function readActiveKey(env: NodeJS.ProcessEnv): string | undefined {
+  const fromEnv = env.SERVER_CRYPTO_KEY?.trim() || undefined;
+  const filePath = env.SERVER_CRYPTO_KEY_FILE?.trim() || undefined;
+  if (fromEnv !== undefined && filePath !== undefined) {
+    throw new Error(
+      'SERVER_CRYPTO_KEY and SERVER_CRYPTO_KEY_FILE are mutually exclusive',
+    );
+  }
+  if (filePath !== undefined) {
+    try {
+      const content = readFileSync(filePath, 'utf8').trim();
+      return content === '' ? undefined : content;
+    } catch (err) {
+      throw new Error(
+        `SERVER_CRYPTO_KEY_FILE unreadable: ${(err as Error).message}`,
+      );
+    }
+  }
+  return fromEnv;
+}
+
+/**
  * Ключ шифрования SSH-креденшелов серверов. Ротация: старый ключ остаётся в
  * SERVER_CRYPTO_OLD_KEYS (decrypt-only), активный перемалывает cipher при чтении.
  */
@@ -195,10 +221,12 @@ function parseCrypto(env: NodeJS.ProcessEnv, isProduction: boolean): CryptoCfg {
     );
   }
 
-  const rawActive = env.SERVER_CRYPTO_KEY?.trim();
-  if (rawActive === undefined || rawActive === '') {
+  const rawActive = readActiveKey(env);
+  if (rawActive === undefined) {
     if (isProduction) {
-      throw new Error('Missing required SERVER_CRYPTO_KEY in production');
+      throw new Error(
+        'Missing required SERVER_CRYPTO_KEY or SERVER_CRYPTO_KEY_FILE in production',
+      );
     }
     if (oldKeys.size > 0) {
       throw new Error(

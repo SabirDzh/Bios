@@ -9,7 +9,7 @@ import { Transform } from 'class-transformer';
 
 export class RequestRecoveryDto {
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string' ? value.toLowerCase() : value,
   )
   @IsString()
   @IsNotEmpty()

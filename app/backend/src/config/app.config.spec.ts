@@ -1,4 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { loadAppConfig } from './app.config';
 import { loadAuthConfig } from '../modules/auth/auth.config';
 
@@ -195,6 +198,51 @@ describe('ssh, network policy, crypto keys and sshOps', () => {
     expect(dev.crypto.activeKey.id).toBe('k1');
     expect(dev.crypto.activeKey.key.length).toBe(32);
     expect(dev.crypto.oldKeys.size).toBe(0);
+  });
+
+  test('SERVER_CRYPTO_KEY_FILE: загрузка из файла, конфликты и ошибки', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bios-crypto-'));
+    const keyB64 = Buffer.alloc(32, 9).toString('base64');
+    const keyFile = join(dir, 'server.key');
+    writeFileSync(keyFile, `${keyB64}\n`);
+
+    const cfg = loadAppConfig(withKeys({ SERVER_CRYPTO_KEY_FILE: keyFile }));
+    expect(cfg.crypto.activeKey.key).toEqual(Buffer.alloc(32, 9));
+    expect(cfg.crypto.ephemeralServerKey).toBe(false);
+
+    // Оба источника сразу — ошибка, молчаливого приоритета нет.
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          SERVER_CRYPTO_KEY_FILE: keyFile,
+          SERVER_CRYPTO_KEY: keyB64,
+        }),
+      ),
+    ).toThrow(/mutually exclusive/);
+
+    // Нет файла — ошибка чтения, а не тихий фолбэк.
+    expect(() =>
+      loadAppConfig(
+        withKeys({ SERVER_CRYPTO_KEY_FILE: join(dir, 'nope.key') }),
+      ),
+    ).toThrow(/unreadable/);
+
+    // Пустой файл = ключа нет: dev — эфемерный, prod — падение.
+    const emptyFile = join(dir, 'empty.key');
+    writeFileSync(emptyFile, '  \n');
+    expect(
+      loadAppConfig(withKeys({ SERVER_CRYPTO_KEY_FILE: emptyFile })).crypto
+        .ephemeralServerKey,
+    ).toBe(true);
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          NODE_ENV: 'production',
+          CORS_ORIGINS: 'https://app.example.com',
+          SERVER_CRYPTO_KEY_FILE: emptyFile,
+        }),
+      ),
+    ).toThrow(/SERVER_CRYPTO_KEY/);
   });
 
   test('OLD_KEYS декодируются по kid, кривые записи падают', () => {

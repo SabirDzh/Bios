@@ -14,7 +14,7 @@ import {
 
 export class CreateUserDto {
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string' ? value.toLowerCase() : value,
   )
   @IsString()
   @IsNotEmpty()
@@ -27,7 +27,7 @@ export class CreateUserDto {
   username: string;
 
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string' ? value.toLowerCase() : value,
   )
   @IsString()
   @IsNotEmpty()
