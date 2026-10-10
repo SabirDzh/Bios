@@ -48,7 +48,7 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.email.verifyMx).toBe(true);
     expect(cfg.email.mxTimeoutMs).toBe(3000);
     expect(cfg.email.extraBlockedDomains).toEqual([]);
-    expect(cfg.invitations.ttlSec).toBe(604800);
+    expect(cfg.invitations.ttlSec).toBe(86400);
     expect(cfg.tokens.confirmTtlSec).toBe(86400);
     expect(cfg.tokens.recoveryTtlSec).toBe(3600);
     expect(cfg.maintenance.cron).toBe('0 3 * * *');

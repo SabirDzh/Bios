@@ -523,7 +523,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ttlSec: positiveInt(env.INVITATION_TTL_SEC, 'INVITATION_TTL_SEC', {
         min: 1,
         max: 2592000,
-        fallback: 604800,
+        fallback: 86400,
       }),
     },
     tokens: {
