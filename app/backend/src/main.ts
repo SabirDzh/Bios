@@ -21,7 +21,8 @@ async function bootstrap() {
     server.set('trust proxy', appConfig.app.trustProxy);
   }
   app.use(helmet());
-  app.use(compression());
+  // threshold: мелкие JSON (<1KB) жать бессмысленно — только CPU и +байты заголовков.
+  app.use(compression({ threshold: 1024 }));
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
