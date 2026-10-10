@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, resetRefreshState } from './client';
 import type { LoginInput, RegisterInput, SessionUser, User } from './types';
 
 export const authApi = {
@@ -6,8 +6,10 @@ export const authApi = {
     return apiPost<User>('/auth/register', input, { retryOnAuth: false });
   },
   /** 200 с пустым телом, сессия приезжает httpOnly-куками. */
-  login(input: LoginInput): Promise<void> {
-    return apiPost<void>('/auth/login', input, { retryOnAuth: false });
+  async login(input: LoginInput): Promise<void> {
+    await apiPost<void>('/auth/login', input, { retryOnAuth: false });
+    // Новая сессия: снимаем блокировку refresh от прошлой мёртвой сессии.
+    resetRefreshState();
   },
   me(): Promise<SessionUser> {
     return apiGet<SessionUser>('/auth/me');

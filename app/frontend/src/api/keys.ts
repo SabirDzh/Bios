@@ -14,3 +14,7 @@ export const workspaceKeys = {
   detail: (workspaceId: string) => [...workspaceKeys.all, 'detail', workspaceId],
   invitations: (workspaceId: string) => [...workspaceKeys.all, workspaceId, 'invitations'],
 } as const;
+
+export const healthKeys = {
+  health: () => ['health'],
+} as const;

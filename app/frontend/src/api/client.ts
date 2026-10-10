@@ -54,6 +54,14 @@ async function doFetch(path: string, init?: RequestInit): Promise<Response> {
 // Обязательно: сервер отзывает семейство при reuse, двойной refresh убил бы сессию.
 let refreshPromise: Promise<void> | undefined;
 
+// Сессия признана мёртвой (refresh ответил 401/403) — не долбим refresh на
+// каждый последующий 401. Сбрасывается успешным входом (authApi.login).
+let refreshDisabled = false;
+
+export function resetRefreshState(): void {
+  refreshDisabled = false;
+}
+
 async function refreshSession(): Promise<void> {
   refreshPromise ??= (async () => {
     try {
@@ -61,6 +69,7 @@ async function refreshSession(): Promise<void> {
       // Тело не читаем: refresh либо выставил куки (2xx), либо нет.
       await res.text().catch(() => undefined);
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) refreshDisabled = true;
         throw new ApiError(res.status, 'Session refresh failed');
       }
     } finally {
@@ -88,7 +97,12 @@ export async function apiFetch<T>(
   const { retryOnAuth = true, ...fetchInit } = init ?? {};
   const res = await doFetch(path, fetchInit);
 
-  if (res.status === 401 && retryOnAuth && path !== '/auth/refresh') {
+  if (
+    res.status === 401 &&
+    retryOnAuth &&
+    path !== '/auth/refresh' &&
+    !refreshDisabled
+  ) {
     await refreshSession();
     const retryRes = await doFetch(path, fetchInit);
     if (!retryRes.ok) {
