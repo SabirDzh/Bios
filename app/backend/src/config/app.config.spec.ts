@@ -350,4 +350,85 @@ describe('ssh, network policy, crypto keys and sshOps', () => {
       loadAppConfig(withKeys({ DOCKER_STATS_TIMEOUT_MS: '500' })),
     ).toThrow(/DOCKER_STATS_TIMEOUT_MS/);
   });
+
+  test('deploy: дефолты соответствуют плану (корень на хосте, 5 мин на шаг, два слота)', () => {
+    expect(loadAppConfig(withKeys()).deploy).toEqual({
+      rootDir: '/opt/bios-deploy',
+      stepTimeoutMs: 300000,
+      logTailBytes: 32768,
+      hostLogBytes: 1048576,
+      maxParallel: 2,
+    });
+    expect(
+      loadAppConfig(
+        withKeys({
+          DEPLOY_ROOT_DIR: '/srv/deploy',
+          DEPLOY_STEP_TIMEOUT_MS: '60000',
+          DEPLOY_LOG_TAIL_BYTES: '4096',
+          DEPLOY_HOST_LOG_BYTES: '65536',
+          DEPLOY_MAX_PARALLEL: '1',
+        }),
+      ).deploy,
+    ).toEqual({
+      rootDir: '/srv/deploy',
+      stepTimeoutMs: 60000,
+      logTailBytes: 4096,
+      hostLogBytes: 65536,
+      maxParallel: 1,
+    });
+  });
+
+  test('deploy: корень обязан быть абсолютным и без shell-метасимволов', () => {
+    for (const bad of [
+      'opt/x',
+      '',
+      '/opt/x; rm -rf /',
+      '/opt/$(id)',
+      "/opt/x'y",
+    ]) {
+      expect(() => loadAppConfig(withKeys({ DEPLOY_ROOT_DIR: bad }))).toThrow(
+        /DEPLOY_ROOT_DIR/,
+      );
+    }
+  });
+
+  test('deploy: границы чисел — fail-fast с именем переменной', () => {
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_STEP_TIMEOUT_MS: '0' })),
+    ).toThrow(/DEPLOY_STEP_TIMEOUT_MS/);
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_STEP_TIMEOUT_MS: '900001' })),
+    ).toThrow(/DEPLOY_STEP_TIMEOUT_MS/);
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_LOG_TAIL_BYTES: '512' })),
+    ).toThrow(/DEPLOY_LOG_TAIL_BYTES/);
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_LOG_TAIL_BYTES: '262145' })),
+    ).toThrow(/DEPLOY_LOG_TAIL_BYTES/);
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_HOST_LOG_BYTES: '65535' })),
+    ).toThrow(/DEPLOY_HOST_LOG_BYTES/);
+    expect(() =>
+      loadAppConfig(withKeys({ DEPLOY_HOST_LOG_BYTES: '8388609' })),
+    ).toThrow(/DEPLOY_HOST_LOG_BYTES/);
+    expect(() => loadAppConfig(withKeys({ DEPLOY_MAX_PARALLEL: '0' }))).toThrow(
+      /DEPLOY_MAX_PARALLEL/,
+    );
+    expect(() => loadAppConfig(withKeys({ DEPLOY_MAX_PARALLEL: '9' }))).toThrow(
+      /DEPLOY_MAX_PARALLEL/,
+    );
+  });
+
+  test('deploy: хвост панели не может быть больше кэпа на хосте', () => {
+    // иначе «хвост в 32 КБ» вырезается из файла, который урезан до 64 КБ, и
+    // контракт двух лимитов разъезжается
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          DEPLOY_LOG_TAIL_BYTES: '131072',
+          DEPLOY_HOST_LOG_BYTES: '65536',
+        }),
+      ),
+    ).toThrow(/DEPLOY_HOST_LOG_BYTES/);
+  });
 });

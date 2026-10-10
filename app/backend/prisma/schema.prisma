@@ -72,6 +72,7 @@ model Workspace {
   members     WorkspaceMember[]
   invitations WorkspaceInvitation[]
   servers     Server[]
+  projects    Project[]
 }
 
 model WorkspaceMember {
@@ -134,6 +135,7 @@ model Server {
   lastAgentStatus  AgentReportStatus?
   lastAgentErrorCode String?
   lastCheckedAt    DateTime?           @db.Timestamptz(3)
+  deployConfigs    DeployConfig[]
   createdAt        DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -158,4 +160,122 @@ enum AgentReportStatus {
   FAILED
   STALE
   ACTIVE
+}
+
+model Project {
+  id            String         @id @default(uuid(7))
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  /// Публичный HTTPS-репозиторий. Секретов тут нет по определению (решение владельца):
+  /// credentials в URL отклоняются DTO, приватные репо — не этот срез.
+  repoUrl       String
+  deployConfigs DeployConfig[]
+  deployments   Deployment[]
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model DeployConfig {
+  id            String        @id @default(uuid(7))
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  method        DeployMethod  @default(GIT_PULL)
+  /// Ветка или тег. Пустое значение = ветка по умолчанию репозитория; в этом срезе
+  /// требует явного ref'а, чтобы «деплойнул не то» не зависело от состояния clone.
+  ref           String
+  /// Относительный путь внутри репозитория; валидируется regex, абсолют и `..` запрещены.
+  dockerfile    String        @default("Dockerfile")
+  /// Имя контейнера на хосте: один контейнер на конфигурацию, повторный деплой
+  /// заменяет его через `docker rm -f` (замер: отсутствующий контейнер = код 0).
+  containerName String
+  /// Маппинги «host:container[/proto]». Массив строк, а не Json: структура
+  /// проверяется DTO, и в БД не записывается то, что не прошло валидацию.
+  ports         String[]      @default([])
+  /// Хост, на который деплоим. FK + Cascade: удаление сервера не оставляет
+  /// конфигурацию висящей на несуществующий хост.
+  serverId      String
+  server        Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  deployments   Deployment[]
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([projectId, name])
+  /// Имя контейнера уникально в пределах СЕРВЕРА, а не проекта: демон считает
+  /// имена глобально для своего сокета, и шаг `run` делает `docker rm -f <имя>`.
+  /// Две конфигурации разных проектов на одном хосте с одним именем иначе
+  /// удаляют контейнер друг друга.
+  @@unique([serverId, containerName])
+  @@index([serverId])
+}
+
+/// Метод деплоя. Исполняется только GIT_PULL; остальные значения — контракт
+/// будущих срезов, create-DTO их отклоняет, чтобы не было полу-заглушек.
+enum DeployMethod {
+  GIT_PULL
+  COMPOSE
+  SHELL_SCRIPT
+  CUSTOM_COMMANDS
+}
+
+model Deployment {
+  id              String           @id @default(uuid(7))
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  configId        String
+  config          DeployConfig     @relation(fields: [configId], references: [id], onDelete: Cascade)
+  /// Кто запустил. Исполнитель перечитывает доступ по этому пользователю:
+  /// если участник вышел из воркспейса, задача падает с 403/404, а не деплоит «вслепую».
+  triggeredById   String
+  status          DeploymentStatus @default(QUEUED)
+  step            DeployStepName?
+  /// Журнал: конкатенация хвостов шагов (каждый ≤ DEPLOY_LOG_TAIL_BYTES, шага 4),
+  /// поэтому размер строки ограничен по построению, а не отдельным лимитом.
+  log             String           @default("")
+  /// Полное имя образа (`bios-deploy:<id деплоя>`), сохранённое с первого запуска:
+  /// срез rollback перезапускает контейнер по уже существующему образу, поэтому
+  /// поле нужно в истории, а не только в команде `docker run`.
+  imageTag        String?
+  commitSha       String?
+  containerId     String?
+  /// Код из словаря DeployErrorCode (TypeScript), в БД — свободная строка:
+  /// список пополняется без DDL, как lastAgentErrorCode в Server.
+  errorCode       String?
+  exitCode        Int?
+  /// NULL, пока задача в очереди: длительность считается от фактического старта.
+  startedAt       DateTime?        @db.Timestamptz(3)
+  finishedAt      DateTime?        @db.Timestamptz(3)
+  durationMs      Int?
+  /// Снимок конфигурации на момент запуска: правка конфигурации между деплоями
+  /// не должна переписывать историю задним числом, и исполнитель строит план из
+  /// него, а не из живых полей.
+  snapshot        Json?
+  /// Ровно одна активная задача на конфигурацию: значение = configId в QUEUED/RUNNING
+  /// и NULL после завершения. NULL не конфликтует, поэтому история FAILED/SUCCESS
+  /// не ограничена (тот же приём, что @@unique([workspaceId, hostKeyFingerprint])).
+  activeConfigId  String?          @unique
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([projectId, createdAt])
+  @@index([configId, createdAt])
+  @@index([status])
+}
+
+enum DeploymentStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  INTERRUPTED
+}
+
+enum DeployStepName {
+  PREFLIGHT
+  SOURCE
+  BUILD
+  RUN
 }

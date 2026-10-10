@@ -37,6 +37,19 @@ export interface DockerCfg {
   statsTimeoutMs: number;
 }
 
+export interface DeployCfg {
+  /** Корень, под которым панель держит clone и логи на ХОСТЕ. Абсолютный путь. */
+  rootDir: string;
+  /** Дедлайн ОДНОГО шага: сборка образа — минуты, preflight — десятки мс. */
+  stepTimeoutMs: number;
+  /** Сколько байт журнала шага приезжает в панель (полный лог остаётся на хосте). */
+  logTailBytes: number;
+  /** Сколько байт вывода шага оставляем на хосте. */
+  hostLogBytes: number;
+  /** Сколько деплоев исполнитель ведёт одновременно. */
+  maxParallel: number;
+}
+
 export interface CryptoCfg {
   activeKey: { id: string; key: Buffer };
   /** Decrypt-only: старые kid переживают ротацию, новым ключом они не шифруются. */
@@ -62,6 +75,7 @@ export interface AppConfig {
   };
   ssh: SshCfg;
   docker: DockerCfg;
+  deploy: DeployCfg;
   crypto: CryptoCfg;
   jwt: AuthConfig;
   cookies: {
@@ -326,6 +340,23 @@ function parsePorts(raw: string | undefined): number[] {
   return [...ports].sort((a, b) => a - b);
 }
 
+const ABSOLUTE_DIR_RE = /^\/[A-Za-z0-9._/-]{0,199}$/;
+
+/**
+ * Корень на хосте попадает в shell-строку, поэтому whitelist без `..`, пробелов,
+ * кавычек и `$`: путь из env — не пользовательский ввод, но инвариант
+ * «в shell уходит только проверенное» не должен зависеть от этого.
+ */
+function parseAbsoluteDir(raw: string | undefined): string {
+  const value = (raw ?? '/opt/bios-deploy').trim();
+  if (!ABSOLUTE_DIR_RE.test(value) || value.includes('..')) {
+    throw new Error(
+      `Invalid DEPLOY_ROOT_DIR="${raw}": expected an absolute path without ".." or shell metacharacters`,
+    );
+  }
+  return value;
+}
+
 function parseBoolFlag(
   raw: string | undefined,
   name: string,
@@ -468,6 +499,37 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ),
   };
 
+  const deploy: DeployCfg = {
+    rootDir: parseAbsoluteDir(env.DEPLOY_ROOT_DIR),
+    stepTimeoutMs: positiveInt(
+      env.DEPLOY_STEP_TIMEOUT_MS,
+      'DEPLOY_STEP_TIMEOUT_MS',
+      { min: 1000, max: 900000, fallback: 300000 },
+    ),
+    logTailBytes: positiveInt(
+      env.DEPLOY_LOG_TAIL_BYTES,
+      'DEPLOY_LOG_TAIL_BYTES',
+      { min: 1024, max: 262144, fallback: 32768 },
+    ),
+    hostLogBytes: positiveInt(
+      env.DEPLOY_HOST_LOG_BYTES,
+      'DEPLOY_HOST_LOG_BYTES',
+      { min: 65536, max: 8388608, fallback: 1048576 },
+    ),
+    maxParallel: positiveInt(env.DEPLOY_MAX_PARALLEL, 'DEPLOY_MAX_PARALLEL', {
+      min: 1,
+      max: 8,
+      fallback: 2,
+    }),
+  };
+  if (deploy.logTailBytes > deploy.hostLogBytes) {
+    // хвост панели вырезается из кэпа на хосте: больший хвост был бы обещанием,
+    // которое shell не может выполнить
+    throw new Error(
+      `Invalid DEPLOY_HOST_LOG_BYTES=${env.DEPLOY_HOST_LOG_BYTES}: must be >= DEPLOY_LOG_TAIL_BYTES (${deploy.logTailBytes})`,
+    );
+  }
+
   return {
     app: { port, isProduction, trustProxy: parseTrustProxy(env.TRUST_PROXY) },
     cors: { origins: parseOrigins(env.CORS_ORIGINS, isProduction) },
@@ -501,6 +563,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     ssh,
     docker,
+    deploy,
     crypto: parseCrypto(env, isProduction),
     jwt,
     cookies: {

@@ -41,6 +41,8 @@ export class FakeSshRunner implements SshRunner {
   dockerStatus: Record<string, number> = {};
   /** Дедлайны, которые сервис просил у транспорта (по типу операции). */
   readonly transportDeadlineMs: number[] = [];
+  /** Дедлайны, которые исполнитель передал каждому exec-шагу. */
+  readonly execTimeoutMs: number[] = [];
   transportsOpened = 0;
   transportsClosed = 0;
   private readonly replies: Reply[] = [];
@@ -76,9 +78,14 @@ export class FakeSshRunner implements SshRunner {
     );
   }
 
-  exec(session: SshSession, command: string): Promise<SshExecResult> {
+  exec(
+    session: SshSession,
+    command: string,
+    timeoutMs: number,
+  ): Promise<SshExecResult> {
     this.sessions.push(session);
     this.commands.push(command);
+    this.execTimeoutMs.push(timeoutMs);
     if (session.expectedHostKeyFingerprint === null) {
       this.probes.push(session.host);
     }
@@ -194,6 +201,7 @@ export class FakeSshRunner implements SshRunner {
     this.dockerRawBodies = {};
     this.dockerRequests.length = 0;
     this.transportDeadlineMs.length = 0;
+    this.execTimeoutMs.length = 0;
     this.dockerHangPrefix = null;
     this.dockerDialFailure = null;
     this.dockerDialCode = null;

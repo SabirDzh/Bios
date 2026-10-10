@@ -9,6 +9,7 @@ import type { AppConfig } from '../app.config';
 export function testAppConfig(
   overrides: Partial<AppConfig['ssh']> = {},
   dockerOverrides: Partial<AppConfig['docker']> = {},
+  deployOverrides: Partial<AppConfig['deploy']> = {},
 ): AppConfig {
   return {
     ssh: {
@@ -27,6 +28,18 @@ export function testAppConfig(
       // сервис передал под конкретную операцию.
       statsTimeoutMs: 900,
       ...dockerOverrides,
+    },
+    deploy: {
+      rootDir: '/tmp/bios-deploy',
+      // Заметно меньше ssh.commandTimeoutMs: тест видит, какой дедлайн
+      // исполнитель повесил на шаг, а не на всю операцию.
+      stepTimeoutMs: 2000,
+      logTailBytes: 512,
+      hostLogBytes: 65536,
+      // Один слот: последовательность «claim → шаги → finalize» наблюдаема
+      // в тестах без гонок, а реальные 2 слота проверяются отдельным тестом.
+      maxParallel: 1,
+      ...deployOverrides,
     },
     crypto: {
       activeKey: { id: 'k1', key: Buffer.alloc(32, 7) },
