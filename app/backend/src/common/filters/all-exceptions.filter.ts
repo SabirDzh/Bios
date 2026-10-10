@@ -42,8 +42,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = status >= 500 ? 'Internal server error' : 'Unexpected error';
     }
 
+    // Машинночитаемый код (424 ssh-сбоев) обязан дожить до клиента.
+    const errorCode =
+      typeof body === 'object' && body !== null && 'errorCode' in body
+        ? body.errorCode
+        : undefined;
+
     response.status(status).json({
       statusCode: status,
+      ...(errorCode === undefined ? {} : { errorCode }),
       message,
       path: request.url,
       timestamp: new Date().toISOString(),

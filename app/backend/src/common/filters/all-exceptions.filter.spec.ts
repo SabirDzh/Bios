@@ -1,5 +1,6 @@
 import { ArgumentsHost, BadRequestException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
+import { FailedDependencyException } from '../http/failed-dependency.exception';
 
 function mockHost(): {
   host: ArgumentsHost;
@@ -39,5 +40,29 @@ describe('AllExceptionsFilter envelope', () => {
     const body = json.mock.calls[0][0];
     expect(body.message).toBe('Internal server error');
     expect(JSON.stringify(body)).not.toContain('secret');
+  });
+
+  test('424 сохраняет errorCode, обычная ошибка — без этого ключа', () => {
+    const withCode = mockHost();
+    new AllExceptionsFilter().catch(
+      new FailedDependencyException({
+        errorCode: 'TARGET_BLOCKED',
+        message: 'target address is not allowed',
+      }),
+      withCode.host,
+    );
+    expect(withCode.status).toHaveBeenCalledWith(424);
+    expect(withCode.json.mock.calls[0][0]).toMatchObject({
+      statusCode: 424,
+      errorCode: 'TARGET_BLOCKED',
+      message: 'target address is not allowed',
+    });
+
+    const withoutCode = mockHost();
+    new AllExceptionsFilter().catch(
+      new BadRequestException('bad input'),
+      withoutCode.host,
+    );
+    expect(withoutCode.json.mock.calls[0][0]).not.toHaveProperty('errorCode');
   });
 });

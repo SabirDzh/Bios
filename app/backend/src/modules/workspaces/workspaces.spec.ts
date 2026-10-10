@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { WorkspaceRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { TokensService } from '../tokens/tokens.service';
@@ -90,6 +91,44 @@ describe('workspaces create/list/get', () => {
     const found = await workspaces.findOneForUser(user.id, created.id);
     expect(found.id).toBe(created.id);
     expect(found.role).toBe('OWNER');
+  });
+
+  test('requireMembership: роль, 404 для чужих, 403 для не-OWNER', async () => {
+    const owner = await registerUser();
+    const outsider = await registerUser();
+    const ws = await workspaces.create(owner.id, { name: 'roles' });
+
+    await expect(workspaces.requireMembership(owner.id, ws.id)).resolves.toBe(
+      'OWNER',
+    );
+    await expect(
+      workspaces.requireMembership(outsider.id, ws.id),
+    ).rejects.toThrow(NotFoundException);
+    await expect(
+      workspaces.requireMembership(
+        owner.id,
+        '01912345-6789-7abc-aef0-1234567890ab',
+        [WorkspaceRole.MEMBER],
+      ),
+    ).rejects.toThrow(NotFoundException);
+
+    const invitation = await workspaces.invite(
+      owner.id,
+      ws.id,
+      'rolemember@example.com',
+    );
+    const member = await users.create({
+      username: 'rolemember',
+      email: 'rolemember@example.com',
+      password: 'secret123',
+    });
+    await workspaces.accept(member.id, ws.id, invitation.token);
+    await expect(
+      workspaces.requireMembership(member.id, ws.id, [WorkspaceRole.OWNER]),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      workspaces.requireMembership(member.id, ws.id, [WorkspaceRole.MEMBER]),
+    ).resolves.toBe('MEMBER');
   });
 });
 

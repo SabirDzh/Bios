@@ -98,16 +98,19 @@ export class WorkspacesService {
     return toWorkspaceResponse(membership.workspace, membership.role);
   }
 
-  private async requireRole(
+  /** Нет membership → 404 (неотличимо). Роль вне списка → 403. */
+  async requireMembership(
     userId: string,
     workspaceId: string,
-    roles: WorkspaceRole[],
-  ): Promise<void> {
+    roles?: WorkspaceRole[],
+  ): Promise<WorkspaceRole> {
     const membership = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
     if (!membership) throw new NotFoundException();
-    if (!roles.includes(membership.role)) throw new ForbiddenException();
+    if (roles && !roles.includes(membership.role))
+      throw new ForbiddenException();
+    return membership.role;
   }
 
   async invite(
@@ -115,7 +118,7 @@ export class WorkspacesService {
     workspaceId: string,
     email: string,
   ): Promise<InvitationCreateResponse> {
-    await this.requireRole(inviterId, workspaceId, [WorkspaceRole.OWNER]);
+    await this.requireMembership(inviterId, workspaceId, [WorkspaceRole.OWNER]);
     const normalizedEmail = email.trim().toLowerCase();
 
     const existingMember = await this.prisma.workspaceMember.findFirst({
