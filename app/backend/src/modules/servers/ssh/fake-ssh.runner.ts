@@ -72,6 +72,17 @@ export class FakeSshRunner implements SshRunner {
       : Promise.resolve(hit.result);
   }
 
+  /**
+   * Очистка между тестами: двойник создаётся один раз на прогон (DI-override в
+   * beforeAll), иначе накопленные команды и ответы просачиваются в следующий тест.
+   */
+  reset(): void {
+    this.commands.length = 0;
+    this.sessions.length = 0;
+    this.probes.length = 0;
+    this.replies.length = 0;
+  }
+
   /** Секрет не имеет права появляться в тексте удалённой команды. */
   assertNoSecretLeak(secret: string): void {
     if (this.commands.some((command) => command.includes(secret))) {
