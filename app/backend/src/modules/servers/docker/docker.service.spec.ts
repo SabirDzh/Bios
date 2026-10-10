@@ -597,6 +597,33 @@ describe('DockerService', () => {
     });
   });
 
+  test('stats: демонское zero-time (остановленный контейнер) → null, а не 1 год', async () => {
+    // Живой промер (28.3.2, stats на остановленном): "read":"0001-01-01T00:00:00Z".
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify({
+        read: '0001-01-01T00:00:00Z',
+        cpu_stats: {},
+        memory_stats: {},
+      }),
+    );
+    const stats = await docker.stats(ownerId, workspaceId, serverId, 'web');
+    expect(stats.readAt).toBeNull();
+  });
+
+  test('inspect never-started контейнера: StartedAt zero-time → null', async () => {
+    // Живой промер: docker create без start отдаёт StartedAt=0001-01-01T00:00:00Z.
+    ssh.dockerRoutes['/containers/fresh/json'] = {
+      Id: 'fresh',
+      Name: '/fresh',
+      Created: '2026-10-10T16:11:21.311Z',
+      State: { Status: 'created', StartedAt: '0001-01-01T00:00:00Z' },
+      Config: { Image: 'alpine:3.20', Cmd: ['echo', 'hi'] },
+    };
+    const one = await docker.details(ownerId, workspaceId, serverId, 'fresh');
+    expect(one.startedAt).toBeNull();
+    expect(one.createdAt).toBe('2026-10-10T16:11:21.311Z');
+  });
+
   test('stats: дедлайн берётся из cfg.docker.statsTimeoutMs', async () => {
     ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
       JSON.stringify(LIVE_STATS),

@@ -153,6 +153,10 @@ function healthOf(value?: string): ContainerHealth {
 /** Демон отдаёт nanosecond-ISO; в контракте панели — миллисекунды. */
 function isoSeconds(value?: string): string | null {
   if (!value) return null;
+  // Go zero-value: демон пишет `0001-01-01T00:00:00Z` контейнеру, который ещё
+  // ни разу не запускался, и stats остановленного контейнера (промер 28.3.2).
+  // Для панели это «нет данных», а не дата из первого века.
+  if (value.startsWith('0001-01-01')) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
