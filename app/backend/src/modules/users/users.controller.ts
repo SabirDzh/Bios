@@ -10,9 +10,11 @@ import {
   Param,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { Inject } from '@nestjs/common';
 import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { clearPairCookies, isSecureCookies } from '../auth/auth-cookies';
+import { clearPairCookies, cookieFlagsFrom } from '../auth/auth-cookies';
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RequestRecoveryDto } from './dto/request-recovery.dto';
@@ -25,7 +27,10 @@ import type { JwtUserPayload } from '../../common/types/user-payload.type';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly service: UsersService) {}
+  constructor(
+    private readonly service: UsersService,
+    @Inject(APP_CONFIG) private readonly appConfig: AppConfig,
+  ) {}
 
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
@@ -36,7 +41,7 @@ export class UsersController {
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
     await this.service.changePassword(user.userId, changePasswordDto);
-    clearPairCookies(res, { cookieSecure: isSecureCookies() });
+    clearPairCookies(res, cookieFlagsFrom(this.appConfig));
   }
 
   @Post('request-recovery')

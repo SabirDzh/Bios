@@ -18,15 +18,19 @@ import { CreateUserDto } from '../users/dto/create-user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshTokenCookie } from './decorators/refresh-token.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
-import { AUTH_CONFIG, type AuthConfig } from './auth.config';
-import { clearPairCookies, setPairCookies } from './auth-cookies';
+import { APP_CONFIG, type AppConfig } from '../../config/app.config';
+import {
+  clearPairCookies,
+  cookieFlagsFrom,
+  setPairCookies,
+} from './auth-cookies';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly service: AuthService,
     private readonly usersService: UsersService,
-    @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
+    @Inject(APP_CONFIG) private readonly appConfig: AppConfig,
   ) {}
 
   @Post('register')
@@ -43,7 +47,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const pair = await this.service.login(authLoginDto);
-    setPairCookies(res, this.config, pair);
+    setPairCookies(res, cookieFlagsFrom(this.appConfig), pair);
   }
 
   @Post('refresh')
@@ -53,7 +57,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const pair = await this.service.refresh(refreshToken);
-    setPairCookies(res, this.config, pair);
+    setPairCookies(res, cookieFlagsFrom(this.appConfig), pair);
   }
 
   @Post('logout')
@@ -64,7 +68,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.service.logout(user);
-    clearPairCookies(res, this.config);
+    clearPairCookies(res, cookieFlagsFrom(this.appConfig));
   }
 
   /** Алиас logout по спеку (`POST auth/revoke` — отмена сессии). */
@@ -76,7 +80,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.service.logout(user);
-    clearPairCookies(res, this.config);
+    clearPairCookies(res, cookieFlagsFrom(this.appConfig));
   }
 
   @Get('me')

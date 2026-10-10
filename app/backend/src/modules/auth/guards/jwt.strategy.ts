@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import type { JwtUserPayload } from '../../../common/types/user-payload.type';
 import { AUTH_CONFIG, type AuthConfig } from '../auth.config';
 import { TOKEN_TYPE_ACCESS } from '../jwt-token.service';
+import { ACCESS_COOKIE_NAME } from '../auth-cookies';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -14,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         (req: Request): string | null => {
           const cookies = req?.cookies as
             Record<string, string | undefined> | undefined;
-          return cookies?.access_token ?? null;
+          return cookies?.[ACCESS_COOKIE_NAME] ?? null;
         },
       ]),
       ignoreExpiration: false,
