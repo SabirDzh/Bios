@@ -567,6 +567,31 @@ describe('servers module', () => {
       expect(row.hostKeyFingerprint).toBeNull();
     });
 
+    test('второй сервер воркспейса с тем же отпечатком → 409, а не 500; пин не записан', async () => {
+      const first = await servers.create(ownerId, workspaceId, dtoFor());
+      await pin(first.id);
+      const second = await servers.create(
+        ownerId,
+        workspaceId,
+        dtoFor({ name: 'second' }),
+      );
+      notTrusted(/.*/);
+      await expect(
+        servers.testConnection(ownerId, workspaceId, second.id, {
+          trustHostKey: observed,
+        }),
+      ).rejects.toMatchObject({
+        status: 409,
+        message: 'host key already registered for another server',
+      });
+      expect(
+        await prisma.server.findUniqueOrThrow({ where: { id: second.id } }),
+      ).toMatchObject({ hostKeyFingerprint: null });
+      expect(
+        await prisma.server.findUniqueOrThrow({ where: { id: first.id } }),
+      ).toMatchObject({ hostKeyFingerprint: observed });
+    });
+
     test('пин есть, хост отдал другой ключ → OFFLINE + HOST_KEY_MISMATCH', async () => {
       const created = await servers.create(ownerId, workspaceId, dtoFor());
       await pin(created.id);

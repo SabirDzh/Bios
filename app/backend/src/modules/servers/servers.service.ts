@@ -252,10 +252,7 @@ export class ServersService {
       if (dto.trustHostKey !== observed) {
         throw new ConflictException('host key fingerprint does not match');
       }
-      await this.saveProbe(serverId, {
-        hostKeyFingerprint: observed,
-        lastCheckedAt: checkedAt,
-      });
+      await this.pinHostKey(serverId, observed, checkedAt);
     }
 
     const { server, session } = await this.loadForSsh(
@@ -439,6 +436,36 @@ export class ServersService {
       throw new InternalServerErrorException(
         'server probe result could not be saved',
         { cause: err },
+      );
+    }
+  }
+
+  /**
+   * Пин может нарушить `@@unique([workspaceId, hostKeyFingerprint])` — это
+   * предсказуемый конфликт данных (409), а не сбой БД (500), как в saveProbe.
+   */
+  private async pinHostKey(
+    serverId: string,
+    fingerprint: string,
+    checkedAt: Date,
+  ): Promise<void> {
+    try {
+      await this.prisma.server.update({
+        where: { id: serverId },
+        data: { hostKeyFingerprint: fingerprint, lastCheckedAt: checkedAt },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw this.mapConflict(err);
+      }
+      throw new InternalServerErrorException(
+        'server host key could not be saved',
+        {
+          cause: err,
+        },
       );
     }
   }
