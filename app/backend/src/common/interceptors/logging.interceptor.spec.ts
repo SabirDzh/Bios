@@ -29,7 +29,7 @@ describe('LoggingInterceptor sampling', () => {
   });
 
   test('ordinary successes are sampled, not logged one by one', (done) => {
-    const interceptor = new LoggingInterceptor();
+    const interceptor = new LoggingInterceptor({ sampleEvery: 100, slowMs: 500 });
     let completed = 0;
     for (let i = 0; i < 10; i += 1) {
       interceptor.intercept(ctx(), handler).subscribe(() => {
@@ -45,7 +45,7 @@ describe('LoggingInterceptor sampling', () => {
   test('slow request is always logged', (done) => {
     let now = 1000;
     const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
-    const interceptor = new LoggingInterceptor();
+    const interceptor = new LoggingInterceptor({ sampleEvery: 100, slowMs: 500 });
     const obs = interceptor.intercept(ctx(), handler);
     now = 1600; // +600ms — выше SLOW_MS, tap отработает при subscribe
     obs.subscribe(() => {
@@ -58,7 +58,7 @@ describe('LoggingInterceptor sampling', () => {
   });
 
   test('every 100th success is logged (liveness pulse)', (done) => {
-    const interceptor = new LoggingInterceptor();
+    const interceptor = new LoggingInterceptor({ sampleEvery: 100, slowMs: 500 });
     let completed = 0;
     for (let i = 0; i < 100; i += 1) {
       interceptor.intercept(ctx(), handler).subscribe(() => {

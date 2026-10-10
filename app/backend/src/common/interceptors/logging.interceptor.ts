@@ -9,11 +9,14 @@ import { Observable, tap } from 'rxjs';
 
 // Семплирование access-лога: каждый запрос через console.log — это
 // синхронный syscall на горячем пути. Пишем каждый N-й успех (пульс
-// «сервис жив») + всегда медленные запросы (>SLOW_MS — см. бюджет p95).
+// «сервис жив») + всегда медленные запросы (>slowMs — см. бюджет p95).
 // Ошибки 5xx логирует AllExceptionsFilter; 4xx не логируем сознательно
 // (шум от 429/401, секретов в URL после S3 всё равно нет).
-const SAMPLE_EVERY = 100;
-const SLOW_MS = 500;
+// Параметры — из конфига (logging), значения по умолчанию см. там.
+export interface LoggingSampleCfg {
+  sampleEvery: number;
+  slowMs: number;
+}
 
 let successCounter = 0;
 
@@ -24,6 +27,8 @@ export function resetLoggingSampleForTests(): void {
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
+  constructor(private readonly cfg: LoggingSampleCfg) {}
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
     const start = Date.now();
@@ -33,7 +38,7 @@ export class LoggingInterceptor implements NestInterceptor {
         const response = context.switchToHttp().getResponse<Response>();
         const ms = Date.now() - start;
         successCounter += 1;
-        if (ms >= SLOW_MS || successCounter % SAMPLE_EVERY === 0) {
+        if (ms >= this.cfg.slowMs || successCounter % this.cfg.sampleEvery === 0) {
           console.log(
             `${request.method} ${request.url} ${response.statusCode} +${ms}ms`,
           );

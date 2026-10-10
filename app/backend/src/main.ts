@@ -21,11 +21,10 @@ async function bootstrap() {
     server.set('trust proxy', appConfig.app.trustProxy);
   }
   app.use(helmet());
-  // threshold: мелкие JSON (<1KB) жать бессмысленно — только CPU и +байты заголовков.
-  app.use(compression({ threshold: 1024 }));
+  app.use(compression({ threshold: appConfig.app.compressionThreshold }));
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  app.useGlobalInterceptors(new LoggingInterceptor(appConfig.logging));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -54,6 +54,9 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.maintenance.cron).toBe('0 3 * * *');
     expect(cfg.maintenance.timeZone).toBe('UTC');
     expect(cfg.maintenance.staleSessionDays).toBe(30);
+    expect(cfg.app.compressionThreshold).toBe(1024);
+    expect(cfg.logging.sampleEvery).toBe(100);
+    expect(cfg.logging.slowMs).toBe(500);
   });
 
   test('invalid values throw with the variable name', () => {
@@ -73,6 +76,10 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       ['TOKEN_CONFIRM_TTL_SEC', '0'],
       ['TOKEN_RECOVERY_TTL_SEC', '99999999'],
       ['EMAIL_MX_TIMEOUT_MS', '0'],
+      ['LOG_SAMPLE_EVERY', '0'],
+      ['LOG_SAMPLE_EVERY', '100001'],
+      ['LOG_SLOW_MS', 'abc'],
+      ['COMPRESSION_THRESHOLD', '-1'],
       ['MAINTENANCE_CRON', 'nonsense'],
       ['MAINTENANCE_TIMEZONE', 'Mars/Olympus'],
       ['MAINTENANCE_STALE_DAYS', '0'],
@@ -131,6 +138,9 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     const cfg = loadAppConfig(
       withKeys({
         PORT: '4000',
+        COMPRESSION_THRESHOLD: '2048',
+        LOG_SAMPLE_EVERY: '10',
+        LOG_SLOW_MS: '1000',
         THROTTLE_AUTH_STRICT_LIMIT: '3',
         INVITATION_TTL_SEC: '3600',
         EMAIL_EXTRA_BLOCKED_DOMAINS: 'Spam.IO, evil.example ',
@@ -138,6 +148,9 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       }),
     );
     expect(cfg.app.port).toBe(4000);
+    expect(cfg.app.compressionThreshold).toBe(2048);
+    expect(cfg.logging.sampleEvery).toBe(10);
+    expect(cfg.logging.slowMs).toBe(1000);
     expect(cfg.throttle.authStrict).toEqual({ limit: 3, ttlMs: 60000 });
     expect(cfg.invitations.ttlSec).toBe(3600);
     expect(cfg.email.extraBlockedDomains).toEqual(['spam.io', 'evil.example']);

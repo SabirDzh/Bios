@@ -63,6 +63,8 @@ export interface AppConfig {
     port: number;
     isProduction: boolean;
     trustProxy: false | number | string;
+    /** Порог compression в байтах: меньшие тела не жмём (только CPU). */
+    compressionThreshold: number;
   };
   cors: { origins: string[] };
   throttle: {
@@ -94,6 +96,7 @@ export interface AppConfig {
   invitations: { ttlSec: number };
   tokens: { confirmTtlSec: number; recoveryTtlSec: number };
   maintenance: { cron: string; timeZone: string; staleSessionDays: number };
+  logging: { sampleEvery: number; slowMs: number };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -531,7 +534,16 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
-    app: { port, isProduction, trustProxy: parseTrustProxy(env.TRUST_PROXY) },
+    app: {
+      port,
+      isProduction,
+      trustProxy: parseTrustProxy(env.TRUST_PROXY),
+      compressionThreshold: positiveInt(
+        env.COMPRESSION_THRESHOLD,
+        'COMPRESSION_THRESHOLD',
+        { min: 0, max: 1048576, fallback: 1024 },
+      ),
+    },
     cors: { origins: parseOrigins(env.CORS_ORIGINS, isProduction) },
     throttle: {
       global: parseThrottle(env, 'THROTTLE_GLOBAL', {
@@ -623,6 +635,18 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           fallback: 30,
         },
       ),
+    },
+    logging: {
+      sampleEvery: positiveInt(env.LOG_SAMPLE_EVERY, 'LOG_SAMPLE_EVERY', {
+        min: 1,
+        max: 100000,
+        fallback: 100,
+      }),
+      slowMs: positiveInt(env.LOG_SLOW_MS, 'LOG_SLOW_MS', {
+        min: 1,
+        max: 60000,
+        fallback: 500,
+      }),
     },
   };
 }
