@@ -34,6 +34,11 @@ export class FakeSshRunner implements SshRunner {
   readonly dockerRequests: string[] = [];
   /** Демон молчит по этому префиксу: проверка дедлайна, а не «зависший тест». */
   dockerHangPrefix: string | null = null;
+  /** Текст stderr и код выхода канала: воспроизводят «docker не установлен». */
+  dockerDialFailure: string | null = null;
+  dockerDialCode: number | null = null;
+  /** HTTP-статус по пути: демон может ответить 500 без всякого stderr. */
+  dockerStatus: Record<string, number> = {};
   /** Дедлайны, которые сервис просил у транспорта (по типу операции). */
   readonly transportDeadlineMs: number[] = [];
   transportsOpened = 0;
@@ -104,35 +109,7 @@ export class FakeSshRunner implements SshRunner {
       );
     }
     const port = await this.ensureMock();
-    this.transportsOpened += 1;
-    let closed = false;
-    const agent = new http.Agent({ keepAlive: false });
-    const createConnection: NonNullable<
-      Pick<http.Agent, 'createConnection'>['createConnection']
-    > = (_options, callback) => {
-      const done = callback ?? (() => undefined);
-      if (closed) {
-        done(
-          new SshFailure('DOCKER_UNREACHABLE', 'docker transport is closed'),
-          null as never,
-        );
-        return undefined;
-      }
-      done(null, net.connect(port, '127.0.0.1'));
-      return undefined;
-    };
-    agent.createConnection = createConnection;
-    return {
-      agent,
-      get dead(): boolean {
-        return closed;
-      },
-      close: (): void => {
-        closed = true;
-        this.transportsClosed += 1;
-        agent.destroy();
-      },
-    };
+    return createFakeTransport(this, port);
   }
 
   private mock: http.Server | null = null;
@@ -147,6 +124,18 @@ export class FakeSshRunner implements SshRunner {
       this.dockerRequests.push(full);
       if (this.dockerHangPrefix && full.startsWith(this.dockerHangPrefix)) {
         return; // демон не отвечает: живое доказательство работы дедлайна
+      }
+      if (this.dockerDialFailure !== null) {
+        // Так ведёт себя `docker system dial-stdio`, которого нет на хосте:
+        // канал пишет stderr, выходит с кодом и НЕ отдаёт HTTP-ответ.
+        res.socket?.destroy();
+        return;
+      }
+      const status = this.dockerStatus[path];
+      if (status) {
+        res.statusCode = status;
+        res.end(JSON.stringify({ message: 'daemon said no' }));
+        return;
       }
       const raw = this.dockerRawBodies[path];
       if (raw) {
@@ -171,6 +160,22 @@ export class FakeSshRunner implements SshRunner {
   }
 
   /**
+   * Мок-демон слушает loopback-сокет, и jest-воркер не завершается, пока он
+   * открыт. Каждый тест создаёт свой двойник — закрывать надо в afterEach.
+   */
+  async closeMock(): Promise<void> {
+    const server = this.mock;
+    this.mock = null;
+    this.mockPort = 0;
+    if (!server) return;
+    // close() ждёт активных соединений: висящий по дедлайну запрос надо рвать.
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+  }
+
+  /**
    * Очистка между тестами: двойник создаётся один раз на прогон (DI-override в
    * beforeAll), иначе накопленные команды, ответы и скрипты Docker API
    * просачиваются в следующий тест.
@@ -185,6 +190,9 @@ export class FakeSshRunner implements SshRunner {
     this.dockerRequests.length = 0;
     this.transportDeadlineMs.length = 0;
     this.dockerHangPrefix = null;
+    this.dockerDialFailure = null;
+    this.dockerDialCode = null;
+    this.dockerStatus = {};
     this.transportsOpened = 0;
     this.transportsClosed = 0;
   }
@@ -195,4 +203,59 @@ export class FakeSshRunner implements SshRunner {
       throw new Error('remote command contains the credential');
     }
   }
+}
+
+/**
+ * Двойник DockerSshTransport: сокет на мок-демона вместо exec-канала
+ * `docker system dial-stdio`. Отдельная функция, а не литерал в методе, потому
+ * что геттер `failure` обязан читать скриптованный stderr с раннера, а не с
+ * самого объекта транспорта (в литерале `this` — транспорт).
+ */
+function createFakeTransport(
+  runner: FakeSshRunner,
+  port: number,
+): DockerTransport {
+  runner.transportsOpened += 1;
+  let closed = false;
+  // agent.destroy() убивает только свободные сокеты: висящий запрос надо рвать
+  // явно, иначе мок переживает тест (в реальном транспорте это делает conn.end()).
+  const live = new Set<net.Socket>();
+  const agent = new http.Agent({ keepAlive: false });
+  const createConnection: NonNullable<
+    Pick<http.Agent, 'createConnection'>['createConnection']
+  > = (_options, callback) => {
+    const done = callback ?? (() => undefined);
+    if (closed) {
+      done(
+        new SshFailure('DOCKER_UNREACHABLE', 'docker transport is closed'),
+        null as never,
+      );
+      return undefined;
+    }
+    const socket = net.connect(port, '127.0.0.1');
+    live.add(socket);
+    socket.on('close', () => live.delete(socket));
+    done(null, socket);
+    return undefined;
+  };
+  agent.createConnection = createConnection;
+  return {
+    agent,
+    get dead(): boolean {
+      return closed;
+    },
+    get failure(): { stderr: string; code: number | null } {
+      return {
+        stderr: runner.dockerDialFailure ?? '',
+        code: runner.dockerDialCode,
+      };
+    },
+    close: (): void => {
+      closed = true;
+      runner.transportsClosed += 1;
+      for (const socket of live) socket.destroy();
+      live.clear();
+      agent.destroy();
+    },
+  };
 }

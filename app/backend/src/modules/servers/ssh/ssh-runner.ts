@@ -64,6 +64,11 @@ export interface SshExecResult {
 export interface DockerTransport {
   readonly agent: import('node:http').Agent;
   readonly dead: boolean;
+  /**
+   * Текст stderr и код выхода последнего exec-канала: источник для
+   * «Docker недоступен» без отдельного раунд-трипа на проверку.
+   */
+  readonly failure: { stderr: string; code: number | null };
   close(): void;
 }
 

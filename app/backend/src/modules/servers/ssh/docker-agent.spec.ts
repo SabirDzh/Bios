@@ -16,8 +16,14 @@ function fakeClient(hang = false): {
   commands: string[];
   ends: number;
   execs: number;
+  channels: Array<PassThrough & { stderr: PassThrough }>;
 } {
-  const state = { commands: [] as string[], ends: 0, execs: 0 };
+  const state = {
+    commands: [] as string[],
+    ends: 0,
+    execs: 0,
+    channels: [] as Array<PassThrough & { stderr: PassThrough }>,
+  };
   const conn = {
     exec(
       command: string,
@@ -26,7 +32,12 @@ function fakeClient(hang = false): {
       state.commands.push(command);
       state.execs += 1;
       if (hang) return;
-      cb(null, new PassThrough());
+      // ClientChannel в ssh2 — Duplex с отдельным `stderr` и событием 'exit'.
+      const channel = Object.assign(new PassThrough(), {
+        stderr: new PassThrough(),
+      });
+      state.channels.push(channel);
+      cb(null, channel);
     },
     end() {
       state.ends += 1;
@@ -101,5 +112,19 @@ test('открытый канал не удерживает таймер: про
   await connect(transport);
   // unref() на таймере дедлайна — иначе jest-воркер висел бы 60 секунд.
   expect(transport.dead).toBe(false);
+  transport.close();
+});
+
+test('failure помнит stderr и код выхода канала', async () => {
+  const client = fakeClient();
+  const transport = new DockerSshTransport(client.conn, 5000);
+  await connect(transport);
+  const channel = client.channels[0];
+  channel.stderr.write('sh: docker: not found\n');
+  channel.emit('exit', 127);
+  expect(transport.failure).toEqual({
+    stderr: 'sh: docker: not found\n',
+    code: 127,
+  });
   transport.close();
 });

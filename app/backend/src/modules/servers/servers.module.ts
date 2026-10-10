@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../database/prisma/prisma.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
-import { DockerModule } from './docker/docker.module';
 import { ComposeModule } from './compose/compose.module';
 import { GitModule } from './git/git.module';
 import { ServersController } from './servers.controller';
@@ -12,13 +11,7 @@ import { NodeSshRunner } from './ssh/node-ssh.runner';
 import { SSH_RUNNER } from './ssh/ssh-runner';
 
 @Module({
-  imports: [
-    PrismaModule,
-    WorkspacesModule,
-    DockerModule,
-    ComposeModule,
-    GitModule,
-  ],
+  imports: [PrismaModule, WorkspacesModule, ComposeModule, GitModule],
   controllers: [ServersController],
   providers: [
     ServersService,
@@ -26,5 +19,8 @@ import { SSH_RUNNER } from './ssh/ssh-runner';
     CredentialCryptoService,
     { provide: SSH_RUNNER, useClass: NodeSshRunner },
   ],
+  // DockerService обязан проходить тот же guard/политику/пин, что test и install:
+  // ему нужны именно эти два провайдера, а не весь модуль.
+  exports: [ServersService, SSH_RUNNER],
 })
 export class ServersModule {}

@@ -5,6 +5,9 @@ import { SshFailure, type DockerTransport } from './ssh-runner';
 
 export const DOCKER_DIAL_COMMAND = 'docker system dial-stdio';
 
+/** Хвост stderr канала: диагноз «Docker недоступен» целиком влезает с запасом. */
+const STDERR_TAIL_BYTES = 2048;
+
 type Cause = 'closed' | 'deadline';
 
 /**
@@ -19,6 +22,8 @@ export class DockerSshTransport implements DockerTransport {
   readonly agent: http.Agent;
   private timer: NodeJS.Timeout | null = null;
   private cause: Cause | null = null;
+  private stderrTail = '';
+  private exitCode: number | null = null;
 
   constructor(
     private readonly conn: Client,
@@ -45,6 +50,16 @@ export class DockerSshTransport implements DockerTransport {
         // Ошибку канала не переизлучаем: http уже получил сокет, а гарантированное
         // завершение даёт дедлайн. Без слушателя 'error' ронял бы процесс.
         stream.on('error', () => undefined);
+        // stderr и код выхода — единственный источник диагноза «Docker
+        // недоступен»: отдельный exec на проверку мы не делаем.
+        stream.stderr.on('data', (chunk: Buffer) => {
+          this.stderrTail = (this.stderrTail + chunk.toString('utf8')).slice(
+            -STDERR_TAIL_BYTES,
+          );
+        });
+        stream.on('exit', (code: number | null) => {
+          this.exitCode = code;
+        });
         done(null, stream);
       });
       return undefined;
@@ -57,6 +72,10 @@ export class DockerSshTransport implements DockerTransport {
 
   get dead(): boolean {
     return this.cause !== null;
+  }
+
+  get failure(): { stderr: string; code: number | null } {
+    return { stderr: this.stderrTail, code: this.exitCode };
   }
 
   close(): void {

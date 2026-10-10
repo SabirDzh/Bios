@@ -10,6 +10,7 @@ import { TokensModule } from './modules/tokens/tokens.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { ServersModule } from './modules/servers/servers.module';
+import { DockerModule } from './modules/servers/docker/docker.module';
 import { DeploymentsModule } from './modules/deployments/deployments.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { AppConfigModule } from './config/app-config.module';
@@ -35,6 +36,7 @@ import { buildThrottlerOptions } from './common/throttle/throttle-options.factor
     WorkspacesModule,
     ProjectsModule,
     ServersModule,
+    DockerModule,
     DeploymentsModule,
   ],
   controllers: [AppController],
