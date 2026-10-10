@@ -1,5 +1,17 @@
 /** Типы повторяют DTO/ответы бэкенда (NestJS). */
 
+/** Курсорная страница list-эндпоинтов: { items, nextCursor }. */
+export interface CursorPage<T> {
+  items: T[];
+  /** null — последняя страница. */
+  nextCursor: string | null;
+}
+
+export interface CursorParams {
+  cursor?: string;
+  limit?: number;
+}
+
 export interface User {
   id: string;
   username: string;
