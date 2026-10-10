@@ -8,6 +8,7 @@ import type { AppConfig } from '../app.config';
  */
 export function testAppConfig(
   overrides: Partial<AppConfig['ssh']> = {},
+  dockerOverrides: Partial<AppConfig['docker']> = {},
 ): AppConfig {
   return {
     ssh: {
@@ -19,6 +20,13 @@ export function testAppConfig(
       allowedPorts: [22, 2202],
       allowLoopback: true,
       ...overrides,
+    },
+    docker: {
+      logsMaxBytes: 262144,
+      // Намеренно не равен ssh.commandTimeoutMs: тест видит, какой дедлайн
+      // сервис передал под конкретную операцию.
+      statsTimeoutMs: 900,
+      ...dockerOverrides,
     },
     crypto: {
       activeKey: { id: 'k1', key: Buffer.alloc(32, 7) },

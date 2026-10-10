@@ -114,3 +114,51 @@ export function createDockerode(transport: DockerTransport): Dockerode {
     agent: transport.agent,
   } as unknown as ConstructorParameters<typeof Dockerode>[0]);
 }
+
+/** Ровно один вызов docker-modem в обход dockerode: dial со стримом. */
+interface ModemDial {
+  dial(
+    options: {
+      path: string;
+      method: string;
+      isStream: boolean;
+      statusCodes: Record<string, string | true>;
+      options: Record<string, string | number | boolean>;
+    },
+    callback: (err: Error | null, stream?: NodeJS.ReadableStream) => void,
+  ): void;
+}
+
+/**
+ * Логи читаем потоком, а не буфером. `container.logs({follow:false})` внутри
+ * docker-modem собирает ВЕСЬ ответ в массив чанков (modem.js:337 `chunks.push`),
+ * поэтому бюджет панели применялся бы постфактум к уже потраченной памяти;
+ * `follow:true` при этом не завершает поток вовсе. dial с `isStream: true`
+ * отдаёт ответ демона как есть и закрывается сам, когда история кончилась.
+ */
+export function requestLogStream(
+  container: Dockerode.Container,
+  query: { tail: number; timestamps: boolean },
+): Promise<NodeJS.ReadableStream> {
+  const modem = container.modem as unknown as ModemDial;
+  return new Promise((resolve, reject) => {
+    modem.dial(
+      {
+        path: `/containers/${container.id}/logs?`,
+        method: 'GET',
+        isStream: true,
+        statusCodes: {
+          200: true,
+          404: 'no such container',
+          500: 'server error',
+        },
+        options: { stdout: 1, stderr: 1, ...query },
+      },
+      (err, stream) => {
+        if (err) return reject(err);
+        if (!stream) return reject(new Error('no docker log stream'));
+        return resolve(stream);
+      },
+    );
+  });
+}

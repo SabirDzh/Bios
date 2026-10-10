@@ -18,16 +18,24 @@ import {
   type SshRunner,
   type SshSession,
 } from '../ssh/ssh-runner';
-import { createDockerode } from '../ssh/docker-agent';
-import type { WorkspaceRole } from '@prisma/client';
+import { createDockerode, requestLogStream } from '../ssh/docker-agent';
 import { MEMBER_ROLES, ServersService } from '../servers.service';
+import type { ContainerLogQueryDto } from './dto/container-log-query.dto';
 import { classifyDialFailure } from './docker-readiness';
 import {
+  hasTty,
+  readLogs,
   toDetails,
+  toStats,
   toSummary,
   type ContainerDetails,
+  type ContainerLogs,
+  type ContainerStats,
   type ContainerSummary,
 } from './container.types';
+
+/** Значение `tail`, если запрос его не задал: экран лога не бесконечен. */
+const LOGS_DEFAULT_TAIL = 200;
 
 /** Ошибка docker-modem: HTTP-статус демона живёт в statusCode. */
 interface DockerApiError {
@@ -53,7 +61,7 @@ export class DockerService {
       userId,
       workspaceId,
       serverId,
-      MEMBER_ROLES,
+      this.cfg.ssh.commandTimeoutMs,
       (docker) =>
         docker.listContainers({ all }).then((rows) => rows.map(toSummary)),
     );
@@ -69,8 +77,64 @@ export class DockerService {
       userId,
       workspaceId,
       serverId,
-      MEMBER_ROLES,
+      this.cfg.ssh.commandTimeoutMs,
       (docker) => docker.getContainer(containerId).inspect().then(toDetails),
+    );
+  }
+
+  /**
+   * inspect нужен до чтения потока: Tty контейнера определяет формат ответа
+   * демона (фреймы или голые байты). Оба вызова живут в одном транспорте и под
+   * одним дедлайном, так что второй раунд-трип не стоит ни коннекта, ни сокета.
+   */
+  async logs(
+    userId: string,
+    workspaceId: string,
+    serverId: string,
+    containerId: string,
+    query: ContainerLogQueryDto,
+  ): Promise<ContainerLogs> {
+    const limitBytes = this.cfg.docker.logsMaxBytes;
+    const tail = query.tail ?? LOGS_DEFAULT_TAIL;
+    const timestamps = query.timestamps === 'true';
+    return this.withDocker(
+      userId,
+      workspaceId,
+      serverId,
+      this.cfg.ssh.commandTimeoutMs,
+      async (docker) => {
+        const container = docker.getContainer(containerId);
+        const tty = hasTty(await container.inspect());
+        const stream = await requestLogStream(container, {
+          tail,
+          timestamps,
+          ...(query.since ? { since: query.since } : {}),
+        });
+        const { lines, truncated } = await readLogs(stream, tty, limitBytes);
+        return { containerId, tty, lines, truncated, limitBytes };
+      },
+    );
+  }
+
+  async stats(
+    userId: string,
+    workspaceId: string,
+    serverId: string,
+    containerId: string,
+  ): Promise<ContainerStats> {
+    return this.withDocker(
+      userId,
+      workspaceId,
+      serverId,
+      this.cfg.docker.statsTimeoutMs,
+      async (docker) => {
+        // stream:false — две выборки внутри одного ответа демона (промер 1064 мс),
+        // поэтому у этой операции свой, более длинный дедлайн.
+        const raw = await docker
+          .getContainer(containerId)
+          .stats({ stream: false });
+        return toStats(containerId, raw);
+      },
     );
   }
 
@@ -83,17 +147,16 @@ export class DockerService {
     userId: string,
     workspaceId: string,
     serverId: string,
-    roles: WorkspaceRole[],
+    deadlineMs: number,
     fn: (docker: Dockerode) => Promise<T>,
   ): Promise<T> {
     const { session } = await this.servers.loadForSsh(
       userId,
       workspaceId,
       serverId,
-      roles,
+      MEMBER_ROLES,
       'authenticated',
     );
-    const deadlineMs = this.cfg.ssh.commandTimeoutMs;
     const transport = await this.openTransport(session, deadlineMs);
     const docker = createDockerode(transport);
 

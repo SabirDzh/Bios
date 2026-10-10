@@ -66,7 +66,64 @@ const INSPECT = {
   },
 };
 
+// Фикстура stats — дословный ответ живого демона 28.3.2 (замер в плане, P1-B):
+// system_cpu_usage и online_cpus живут ВНУТРИ cpu_stats/precpu_stats, а blkio
+// даёт по записи на устройство.
+const LIVE_STATS = {
+  read: '2026-10-10T14:17:52.066724461Z',
+  preread: '2026-10-10T14:17:51.061630169Z',
+  cpu_stats: {
+    cpu_usage: {
+      total_usage: 10249000,
+      usage_in_kernelmode: 0,
+      usage_in_usermode: 0,
+    },
+    system_cpu_usage: 74550000000,
+    online_cpus: 4,
+    throttling_data: {},
+  },
+  precpu_stats: {
+    cpu_usage: { total_usage: 10249000 },
+    system_cpu_usage: 70540000000,
+    online_cpus: 4,
+  },
+  memory_stats: { usage: 2260992, limit: 4110372864, stats: {} },
+  blkio_stats: {
+    io_service_bytes_recursive: [
+      { major: 254, minor: 0, op: 'read', value: 1523712 },
+      { major: 254, minor: 0, op: 'write', value: 0 },
+      { major: 254, minor: 16, op: 'read', value: 147456 },
+    ],
+  },
+  networks: { eth0: { rx_bytes: 1878, tx_bytes: 126 } },
+};
+
 describe('DockerService', () => {
+  /** Кадр мультиплексированного потока: [тип][3 нуля][длина BE32][тело]. */
+  function frame(stream: 1 | 2, text: string): Buffer {
+    const body = Buffer.from(text, 'utf8');
+    const out = Buffer.alloc(8 + body.length);
+    out.writeUInt8(stream, 0);
+    out.writeUInt32BE(body.length, 4);
+    body.copy(out, 8);
+    return out;
+  }
+
+  /** Tty берётся из inspect — двойник обязан отдать его до чтения логов. */
+  function setTty(tty: boolean): void {
+    ssh.dockerRoutes['/containers/web/json'] = { Config: { Tty: tty } };
+  }
+
+  function requestWith(substring: string): string {
+    const hit = ssh.dockerRequests.find((r) => r.includes(substring));
+    if (!hit) {
+      throw new Error(
+        `нет запроса с «${substring}», были: ${ssh.dockerRequests.join(', ')}`,
+      );
+    }
+    return hit;
+  }
+
   let prisma: PrismaService;
   let users: UsersService;
   let workspaces: WorkspacesService;
@@ -321,6 +378,236 @@ describe('DockerService', () => {
     ssh.dockerRoutes['/containers/json'] = LIST;
     await docker.list(ownerId, workspaceId, serverId, true);
     expect(ssh.transportDeadlineMs).toEqual([1500]);
+  });
+
+  test('логи: порядок stdout/stderr сохраняется по фреймам', async () => {
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = Buffer.concat([
+      // Первым кадром идёт stderr — именно так поток приходит с демона. Порядок
+      // обязан дойти до панели, а не «сначала весь stdout, потом весь stderr».
+      frame(2, 'err-1\n'),
+      frame(1, 'out-1\n'),
+      frame(2, 'err-2\n'),
+    ]);
+    const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    expect(logs).toEqual({
+      containerId: 'web',
+      tty: false,
+      lines: [
+        { stream: 'stderr', text: 'err-1' },
+        { stream: 'stdout', text: 'out-1' },
+        { stream: 'stderr', text: 'err-2' },
+      ],
+      truncated: false,
+      limitBytes: 262144,
+    });
+  });
+
+  test('логи: при tty заголовков нет — голые байты идут в stdout', async () => {
+    setTty(true);
+    ssh.dockerRawBodies['/containers/web/logs'] =
+      Buffer.from('tty-out\r\ntty-2\n');
+    const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    expect(logs.tty).toBe(true);
+    expect(logs.lines).toEqual([
+      { stream: 'stdout', text: 'tty-out' },
+      { stream: 'stdout', text: 'tty-2' },
+    ]);
+  });
+
+  test('логи: один кадр с несколькими строками разбирается построчно', async () => {
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = frame(1, 'a\nb\nc\n');
+    const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    expect(logs.lines.map((line) => line.text)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('логи: бюджет общий на оба потока и считается в байтах UTF-8', async () => {
+    docker = new DockerService(
+      servers,
+      ssh,
+      testAppConfig({}, { logsMaxBytes: 64 }),
+    );
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = Buffer.concat([
+      frame(1, 'привет-привет-привет\n'), // UTF-8 вдвое длиннее, чем .length
+      frame(2, `${'x'.repeat(200)}\n`),
+    ]);
+    const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    const bytes = logs.lines.reduce(
+      (acc, line) => acc + Buffer.byteLength(line.text, 'utf8'),
+      0,
+    );
+    expect(logs.truncated).toBe(true);
+    expect(bytes).toBeLessThanOrEqual(64);
+  });
+
+  test('логи: при переборе бюджета остаётся хвост, а не начало', async () => {
+    docker = new DockerService(
+      servers,
+      ssh,
+      testAppConfig({}, { logsMaxBytes: 8 }),
+    );
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = Buffer.concat([
+      frame(1, 'aaaa\n'),
+      frame(1, 'bbbb\n'),
+      frame(1, 'cccc\n'),
+    ]);
+    const logs = await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    expect(logs.lines.map((line) => line.text)).toEqual(['bbbb', 'cccc']);
+    expect(logs.truncated).toBe(true);
+  });
+
+  test('логи: tail, timestamps, stdout и stderr уходят демону в query', async () => {
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = frame(1, 'a\nb\nc\n');
+    await docker.logs(ownerId, workspaceId, serverId, 'web', {
+      tail: 2,
+      timestamps: 'true',
+    });
+    const request = requestWith('containers/web/logs');
+    expect(request).toContain('tail=2');
+    expect(request).toContain('timestamps=true');
+    expect(request).toContain('stdout=1');
+    expect(request).toContain('stderr=1');
+  });
+
+  test('логи: tail по умолчанию 200, inspect и logs идут на одном транспорте', async () => {
+    setTty(false);
+    ssh.dockerRawBodies['/containers/web/logs'] = frame(1, 'a\n');
+    await docker.logs(ownerId, workspaceId, serverId, 'web', {});
+    expect(requestWith('containers/web/logs')).toContain('tail=200');
+    // inspect + logs = два вызова демона, один SSH-коннект.
+    expect(ssh.transportsOpened).toBe(1);
+    expect(ssh.transportsClosed).toBe(1);
+  });
+
+  test('логи: контейнера нет → 404 на inspect, логов не запрашивали', async () => {
+    await expect(
+      docker.logs(ownerId, workspaceId, serverId, 'ghost', {}),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(ssh.dockerRequests.some((r) => r.includes('/logs'))).toBe(false);
+  });
+
+  test('логи: зависший демон прерывается дедлайном и закрывает транспорт', async () => {
+    docker = new DockerService(
+      servers,
+      ssh,
+      testAppConfig({ commandTimeoutMs: 40 }),
+    );
+    setTty(false);
+    ssh.dockerHangPrefix = 'GET /containers/web/logs';
+    await expect(
+      docker.logs(ownerId, workspaceId, serverId, 'web', {}),
+    ).rejects.toMatchObject({
+      status: 504,
+      response: { errorCode: 'TIMEOUT' },
+    });
+    expect(ssh.transportsClosed).toBe(1);
+  });
+
+  test('stats: живая структура — cpuPercent null у спящего, блоки суммируются', async () => {
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify(LIVE_STATS),
+    );
+    const stats = await docker.stats(ownerId, workspaceId, serverId, 'web');
+    expect(stats).toEqual({
+      containerId: 'web',
+      readAt: '2026-10-10T14:17:52.066Z',
+      // У спящего контейнера cpuDelta = 0 (измерено) — это «нет данных», а не 0%.
+      cpuPercent: null,
+      memoryUsageBytes: 2260992,
+      memoryLimitBytes: 4110372864,
+      netRxBytes: 1878,
+      netTxBytes: 126,
+      blkReadBytes: 1671168, // 1523712 + 147456: по записи на устройство
+      blkWriteBytes: 0,
+    });
+  });
+
+  test('stats: ненулевая дельта и online_cpus=2 дают 200%', async () => {
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify({
+        read: '2026-10-10T14:17:52.066724461Z',
+        cpu_stats: {
+          cpu_usage: { total_usage: 3000 },
+          system_cpu_usage: 2500,
+          online_cpus: 2,
+        },
+        precpu_stats: {
+          cpu_usage: { total_usage: 2000 },
+          system_cpu_usage: 1500,
+          online_cpus: 2,
+        },
+        memory_stats: {},
+      }),
+    );
+    const stats = await docker.stats(ownerId, workspaceId, serverId, 'web');
+    // Дельта контейнера = дельта хоста → одну CPU-секунду на 2 доступных CPU.
+    expect(stats.cpuPercent).toBe(200);
+    expect(stats.memoryUsageBytes).toBeNull();
+  });
+
+  test('stats: перcpu без online_cpus и без percpu_usage → нет данных, а не 1 CPU', async () => {
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify({
+        read: '2026-10-10T14:17:52.066724461Z',
+        cpu_stats: {
+          cpu_usage: { total_usage: 3000 },
+          system_cpu_usage: 2000,
+        },
+        precpu_stats: {
+          cpu_usage: { total_usage: 2000 },
+          system_cpu_usage: 1500,
+        },
+      }),
+    );
+    const stats = await docker.stats(ownerId, workspaceId, serverId, 'web');
+    expect(stats.cpuPercent).toBeNull();
+  });
+
+  test('stats: пустой ответ демона → null во всех полях, NaN нигде', async () => {
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify({ cpu_stats: {}, memory_stats: {} }),
+    );
+    const stats = await docker.stats(ownerId, workspaceId, serverId, 'web');
+    expect(stats).toEqual({
+      containerId: 'web',
+      readAt: null,
+      cpuPercent: null,
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+      netRxBytes: null,
+      netTxBytes: null,
+      blkReadBytes: null,
+      blkWriteBytes: null,
+    });
+  });
+
+  test('stats: дедлайн берётся из cfg.docker.statsTimeoutMs', async () => {
+    ssh.dockerRawBodies['/containers/web/stats'] = Buffer.from(
+      JSON.stringify(LIVE_STATS),
+    );
+    await docker.stats(ownerId, workspaceId, serverId, 'web');
+    expect(ssh.transportDeadlineMs).toEqual([900]);
+    expect(requestWith('containers/web/stats')).toContain('stream=false');
+  });
+
+  test('stats: зависший демон прерывается дедлайном и закрывает транспорт', async () => {
+    docker = new DockerService(
+      servers,
+      ssh,
+      testAppConfig({}, { statsTimeoutMs: 40 }),
+    );
+    ssh.dockerHangPrefix = 'GET /containers/web/stats';
+    await expect(
+      docker.stats(ownerId, workspaceId, serverId, 'web'),
+    ).rejects.toMatchObject({
+      status: 504,
+      response: { errorCode: 'TIMEOUT' },
+    });
+    expect(ssh.transportsClosed).toBe(1);
   });
 });
 

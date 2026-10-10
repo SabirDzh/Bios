@@ -301,4 +301,34 @@ describe('ssh, network policy, crypto keys and sshOps', () => {
       loadAppConfig(withKeys({ AGENT_HEARTBEAT_STALE_SEC: '5' })),
     ).toThrow(/AGENT_HEARTBEAT_STALE_SEC/);
   });
+
+  test('docker limits: дефолты и перегрузка env', () => {
+    expect(loadAppConfig(withKeys()).docker).toEqual({
+      logsMaxBytes: 262144,
+      statsTimeoutMs: 15000,
+    });
+    expect(
+      loadAppConfig(
+        withKeys({
+          DOCKER_LOGS_MAX_BYTES: '4096',
+          DOCKER_STATS_TIMEOUT_MS: '30000',
+        }),
+      ).docker,
+    ).toEqual({ logsMaxBytes: 4096, statsTimeoutMs: 30000 });
+  });
+
+  test('docker limits: ноль, мусор и выход за диапазон — fail-fast', () => {
+    expect(() =>
+      loadAppConfig(withKeys({ DOCKER_LOGS_MAX_BYTES: '0' })),
+    ).toThrow(/DOCKER_LOGS_MAX_BYTES/);
+    expect(() =>
+      loadAppConfig(withKeys({ DOCKER_LOGS_MAX_BYTES: '16777216' })),
+    ).toThrow(/DOCKER_LOGS_MAX_BYTES/);
+    expect(() =>
+      loadAppConfig(withKeys({ DOCKER_STATS_TIMEOUT_MS: 'x' })),
+    ).toThrow(/DOCKER_STATS_TIMEOUT_MS/);
+    expect(() =>
+      loadAppConfig(withKeys({ DOCKER_STATS_TIMEOUT_MS: '500' })),
+    ).toThrow(/DOCKER_STATS_TIMEOUT_MS/);
+  });
 });

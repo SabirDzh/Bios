@@ -49,7 +49,7 @@ interface RawSummary {
   Created?: number;
 }
 
-interface RawInspect {
+export interface RawInspect {
   Id?: string;
   Name?: string;
   Created?: string;
@@ -65,6 +65,7 @@ interface RawInspect {
     Image?: string;
     Cmd?: string[] | null;
     Labels?: Record<string, string>;
+    Tty?: boolean;
   };
   NetworkSettings?: {
     Ports?: Record<
@@ -154,4 +155,187 @@ function isoSeconds(value?: string): string | null {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Tty контейнера决定了 формат лога: при Tty демон отдаёт ГОЛЫЕ байты без
+ * восьмидесятибайтных заголовков. Признак берём из inspect, а не «похожа ли
+ * первая строка на заголовок» — raw-поток может начаться с 0x01.
+ */
+export function hasTty(raw: RawInspect): boolean {
+  return raw.Config?.Tty === true;
+}
+
+export interface LogLine {
+  stream: 'stdout' | 'stderr';
+  text: string;
+}
+
+export interface ContainerLogs {
+  containerId: string;
+  tty: boolean;
+  /** Строки в порядке прихода кадров — потоки НЕ разделяются на два буфера. */
+  lines: LogLine[];
+  truncated: boolean;
+  limitBytes: number;
+}
+
+/** Замер живого демона: [тип 1 байт][3 нуля][длина BE32][тело]. */
+const FRAME_HEADER_BYTES = 8;
+
+/**
+ * Один проход по потоку логов: байты считаются в UTF-8 (кириллица вдвое
+ * длиннее, чем `.length`), бюджет общий на оба потока, а при переборе остаётся
+ * ХВОСТ — окно в два бюджета, из которого старые строки вытесняются снизу.
+ */
+export async function readLogs(
+  stream: NodeJS.ReadableStream,
+  tty: boolean,
+  budgetBytes: number,
+): Promise<{ lines: LogLine[]; truncated: boolean }> {
+  const kept: LogLine[] = [];
+  const window = budgetBytes * 2;
+  let used = 0;
+  let truncated = false;
+  let buffer = Buffer.alloc(0);
+
+  const push = (text: string, kind: LogLine['stream']): void => {
+    kept.push({ stream: kind, text });
+    used += Buffer.byteLength(text, 'utf8');
+    while (kept.length > 1 && used > window) {
+      used -= Buffer.byteLength(kept.shift()?.text ?? '', 'utf8');
+      truncated = true;
+    }
+  };
+
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    buffer = Buffer.concat([buffer, chunk]);
+    for (;;) {
+      if (tty) {
+        const cut = buffer.indexOf(0x0a);
+        if (cut < 0) break;
+        pushEach(buffer.subarray(0, cut + 1), push, 'stdout');
+        buffer = buffer.subarray(cut + 1);
+        continue;
+      }
+      if (buffer.length < FRAME_HEADER_BYTES) break;
+      const kind: LogLine['stream'] =
+        buffer.readUInt8(0) === 2 ? 'stderr' : 'stdout';
+      const size = buffer.readUInt32BE(4);
+      if (buffer.length < FRAME_HEADER_BYTES + size) break;
+      pushEach(
+        buffer.subarray(FRAME_HEADER_BYTES, FRAME_HEADER_BYTES + size),
+        push,
+        kind,
+      );
+      buffer = buffer.subarray(FRAME_HEADER_BYTES + size);
+    }
+  }
+  // Недочитанный хвост raw-потока (демон не поставил \n) — тоже строка.
+  if (tty && buffer.length > 0) pushEach(buffer, push, 'stdout');
+
+  while (kept.length > 0 && used > budgetBytes) {
+    used -= Buffer.byteLength(kept.shift()?.text ?? '', 'utf8');
+    truncated = true;
+  }
+  return { lines: kept, truncated };
+}
+
+/** Кадр может содержать несколько строк; пустая строка после \n — не строка. */
+function pushEach(
+  body: Buffer,
+  push: (text: string, kind: LogLine['stream']) => void,
+  kind: LogLine['stream'],
+): void {
+  const pieces = body.toString('utf8').split('\n');
+  if (pieces.at(-1) === '') pieces.pop();
+  for (const piece of pieces) push(piece.replace(/\r$/, ''), kind);
+}
+
+export interface ContainerStats {
+  containerId: string;
+  readAt: string | null;
+  cpuPercent: number | null;
+  memoryUsageBytes: number | null;
+  memoryLimitBytes: number | null;
+  netRxBytes: number | null;
+  netTxBytes: number | null;
+  blkReadBytes: number | null;
+  blkWriteBytes: number | null;
+}
+
+interface DockerStatsResponse {
+  read?: string;
+  cpu_stats?: {
+    cpu_usage?: { total_usage?: number; percpu_usage?: number[] };
+    system_cpu_usage?: number;
+    online_cpus?: number;
+  };
+  precpu_stats?: {
+    cpu_usage?: { total_usage?: number };
+    system_cpu_usage?: number;
+  };
+  memory_stats?: { usage?: number; limit?: number };
+  networks?: Record<string, { rx_bytes?: number; tx_bytes?: number }>;
+  blkio_stats?: {
+    io_service_bytes_recursive?: Array<{ op?: string; value?: number }>;
+  };
+}
+
+const num = (value: number | undefined): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0;
+
+const nullableNum = (value: number | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+
+/**
+ * cpu% = дельта двух выборок, которые демон делает внутри одного ответа
+ * (`stream:false`, промер: ~1064 мс). `system_cpu_usage` и `online_cpus` —
+ * ЧИСЛА внутри cpu_stats/precpu_stats (замер 28.3.2), а не объект и не на
+ * верхнем уровне; `percpu_usage` на этом демоне отсутствует вовсе, поэтому
+ * fallback не должен превращаться в «1 CPU».
+ */
+export function toStats(
+  containerId: string,
+  raw: DockerStatsResponse,
+): ContainerStats {
+  const cpu = raw.cpu_stats ?? {};
+  const pre = raw.precpu_stats ?? {};
+  const cpuDelta =
+    num(cpu.cpu_usage?.total_usage) - num(pre.cpu_usage?.total_usage);
+  const sysDelta = num(cpu.system_cpu_usage) - num(pre.system_cpu_usage);
+  const cpus =
+    num(cpu.online_cpus) || (cpu.cpu_usage?.percpu_usage?.length ?? 0);
+  const net = Object.values(raw.networks ?? {})[0] ?? {};
+  const disk = ioByOp(raw.blkio_stats?.io_service_bytes_recursive);
+
+  return {
+    containerId,
+    readAt: isoSeconds(raw.read),
+    cpuPercent:
+      cpuDelta > 0 && sysDelta > 0 && cpus > 0
+        ? round3((cpuDelta / sysDelta) * cpus * 100)
+        : null,
+    memoryUsageBytes: nullableNum(raw.memory_stats?.usage),
+    memoryLimitBytes: nullableNum(raw.memory_stats?.limit),
+    netRxBytes: nullableNum(net.rx_bytes),
+    netTxBytes: nullableNum(net.tx_bytes),
+    blkReadBytes: disk.read,
+    blkWriteBytes: disk.write,
+  };
+}
+
+/** Демон отдаёт по записи на устройство: значения одного op суммируются. */
+function ioByOp(entries?: Array<{ op?: string; value?: number }>): {
+  read: number | null;
+  write: number | null;
+} {
+  if (!entries) return { read: null, write: null };
+  const sum = (op: string): number =>
+    entries
+      .filter((entry) => entry.op === op)
+      .reduce((acc, entry) => acc + num(entry.value), 0);
+  return { read: sum('read'), write: sum('write') };
 }

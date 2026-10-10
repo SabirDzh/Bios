@@ -30,6 +30,13 @@ export interface SshCfg {
   allowLoopback: boolean;
 }
 
+export interface DockerCfg {
+  /** Потолок байт логов на один ответ панели: считаем в UTF-8, не в символах. */
+  logsMaxBytes: number;
+  /** stats({stream:false}) внутри одного вызова делает две выборки (~1 с). */
+  statsTimeoutMs: number;
+}
+
 export interface CryptoCfg {
   activeKey: { id: string; key: Buffer };
   /** Decrypt-only: старые kid переживают ротацию, новым ключом они не шифруются. */
@@ -49,6 +56,7 @@ export interface AppConfig {
     sshOps: ThrottleProfileCfg;
   };
   ssh: SshCfg;
+  docker: DockerCfg;
   crypto: CryptoCfg;
   jwt: AuthConfig;
   cookies: {
@@ -412,6 +420,19 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowLoopback,
   };
 
+  const docker: DockerCfg = {
+    logsMaxBytes: positiveInt(
+      env.DOCKER_LOGS_MAX_BYTES,
+      'DOCKER_LOGS_MAX_BYTES',
+      { min: 1024, max: 8388608, fallback: 262144 },
+    ),
+    statsTimeoutMs: positiveInt(
+      env.DOCKER_STATS_TIMEOUT_MS,
+      'DOCKER_STATS_TIMEOUT_MS',
+      { min: 1000, max: 120000, fallback: 15000 },
+    ),
+  };
+
   return {
     app: { port, isProduction },
     cors: { origins: parseOrigins(env.CORS_ORIGINS, isProduction) },
@@ -438,6 +459,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       }),
     },
     ssh,
+    docker,
     crypto: parseCrypto(env, isProduction),
     jwt,
     cookies: {
