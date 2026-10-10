@@ -299,7 +299,7 @@ import { NodeSshRunner } from './node-ssh.runner';
 import { SshFailure, type SshSession } from './ssh-runner';
 import { hostKeyFingerprint } from './host-key';
 import { startSshFixture } from './testing/ssh-server-fixture';
-import { testAppConfig } from '../../../config/testing/app-config.fixture';
+import { testAppConfig } from '../servers.spec'; // export function testAppConfig, серверные спеки уже его используют
 
 function dockerMock(): { server: http.Server; port: Promise<number>; hits: string[] } {
   const hits: string[] = [];
@@ -321,11 +321,11 @@ function dockerMock(): { server: http.Server; port: Promise<number>; hits: strin
   return { server, port, hits };
 }
 
-function session(pin: string | null): SshSession {
+function session(port: number, pin: string | null): SshSession {
   return {
     host: '127.0.0.1',
     address: '127.0.0.1',
-    port: 0,
+    port,
     username: 'root',
     authType: 'PASSWORD',
     secret: 'sup3rsecret',
@@ -340,8 +340,8 @@ test('один SSH-коннект обслуживает несколько Dock
     password: 'sup3rsecret',
     dialStdioPort: port,
   });
-  const runner = new NodeSshRunner(testAppConfig({ sshPort: fx.port }));
-  const transport = await runner.dockerTransport(session(fx.hostKey()), 8000);
+  const runner = new NodeSshRunner(testAppConfig());
+  const transport = await runner.dockerTransport(session(fx.port, fx.fingerprint), 8000);
   try {
     const call = (path: string) =>
       new Promise<number>((resolve, reject) => {
@@ -369,8 +369,10 @@ test('без принятого пина транспорт падает до а
   const mock = dockerMock();
   const port = await mock.port;
   const fx = await startSshFixture({ password: 'sup3rsecret', dialStdioPort: port });
-  const runner = new NodeSshRunner(testAppConfig({ sshPort: fx.port }));
-  await expect(runner.dockerTransport(session(null), 8000)).rejects.toBeInstanceOf(
+  const runner = new NodeSshRunner(testAppConfig());
+  await expect(
+    runner.dockerTransport(session(fx.port, null), 8000),
+  ).rejects.toBeInstanceOf(
     SshFailure,
   );
   await new Promise((r) => mock.server.close(r));
@@ -1667,7 +1669,7 @@ git commit -m "test(backend): docker operate e2e and live smoke over ssh transpo
 | Пункт | Вердикт | Как проверено |
 |---|---|---|
 | P1-5 таймаут только на handshake | **верно** | `dockerTransport` снимает guard в `finally` после `ready`; `await fn(docker)` в `withDocker` не ограничен |
-| P1-5b «stats ≥ 2×`commandTimeoutMs`» | **верно как противоречие, но не в ту сторону** | дефолты: `connectTimeoutMs=10000`, `commandTimeoutMs=15000` (`app.config.ts:361-372`); правило «2×» было моей неизмеренной фразой — removing, базис ниже: одна выборка stats = 1064 мс (спайк) |
+| P1-5b «stats ≥ 2×`commandTimeoutMs`» | **верно как противоречие, но не в ту сторону** | дефолты: `connectTimeoutMs=10000`, `commandTimeoutMs=15000` (`app.config.ts:361-372`); правило «2×» было моей неизмеренной фразой — снимаю его; базис ниже: одна выборка stats = 1064 мс (спайк) |
 | P1-6 структура stats | **верно** | живой демон: `cpu_stats = {cpu_usage, system_cpu_usage: <число>, online_cpus, throttling_data}`, `precpu_stats.system_cpu_usage` тоже число, блок — `blkio_stats.io_service_bytes_recursive` |
 | P1-7 `Number(null) === 0` | **верно** | `node -e "console.log(Number(null))"` → `0`: у running-контейнера появился бы `exitCode: 0` |
 | P2-8 `startedAt` = `Created` | **верно** | в list API `Created` — время создания; `State.StartedAt` есть только в inspect |
