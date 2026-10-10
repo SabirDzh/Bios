@@ -275,4 +275,22 @@ describe('auth rotation lifecycle (postgres)', () => {
       prisma.token.findUnique({ where: { id: expired.id } }),
     ).resolves.toBeNull();
   });
+
+  test('concurrent recovery: exactly one wins (S4, delete-first)', async () => {
+    const user = await registerUser();
+    const token = await prisma.token.create({
+      data: {
+        userId: user.id,
+        type: 'RECOVERY',
+        expiresAt: new Date(Date.now() + 60000),
+      },
+    });
+    const dto = { password: 'newsecret1', confirmPassword: 'newsecret1' };
+    const results = await Promise.allSettled([
+      users.recoveryPassword(token.id, dto),
+      users.recoveryPassword(token.id, dto),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+  });
 });

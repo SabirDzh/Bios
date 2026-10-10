@@ -10,7 +10,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { TokensService } from '../tokens/tokens.service';
 import { SessionsService } from '../sessions/sessions.service';
-import { TokenType, User } from '@prisma/client';
+import { TokenType, RefreshSessionStatus, User } from '@prisma/client';
 import { RecoveryPasswordDto } from './dto/recovery-password.dto';
 
 @Injectable()
@@ -125,17 +125,21 @@ export class UsersService {
     const user = await this.findById(token.userId);
     const hashedPassword = await argon2.hash(password);
 
-    await Promise.all([
-      this.prisma.user.update({
+    // S4: delete-first в транзакции — побеждает ровно один конкурент.
+    // Проигравший видит 0 удалённых строк → 404, повторное использование закрыто.
+    await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.token.deleteMany({ where: { id: recoveryId } });
+      if (deleted.count !== 1) throw new NotFoundException();
+      await tx.user.update({
         where: { id: user.id },
-        data: {
-          password: hashedPassword,
-        },
-      }),
-      this.tokensService.remove(recoveryId),
+        data: { password: hashedPassword },
+      });
       // Восстановление пароля отзывает все сессии пользователя.
-      this.sessionsService.revokeAllForUser(user.id),
-    ]);
+      await tx.refreshSession.updateMany({
+        where: { userId: user.id, status: RefreshSessionStatus.ACTIVE },
+        data: { status: RefreshSessionStatus.REVOKED, revokedAt: new Date() },
+      });
+    });
 
     return { message: 'Password recovery successfully.' };
   }
@@ -143,15 +147,15 @@ export class UsersService {
   async confirm(confirmationId: string) {
     const token = await this.findTokenById(confirmationId, TokenType.CONFIRM);
     const user = await this.findById(token.userId);
-    await Promise.all([
-      this.prisma.user.update({
+
+    await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.token.deleteMany({ where: { id: confirmationId } });
+      if (deleted.count !== 1) throw new NotFoundException();
+      await tx.user.update({
         where: { id: user.id },
-        data: {
-          confirmed: true,
-        },
-      }),
-      this.tokensService.remove(confirmationId),
-    ]);
+        data: { confirmed: true },
+      });
+    });
     return { message: 'User confirmed successfully.' };
   }
 
