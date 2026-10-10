@@ -19,7 +19,13 @@ import {
   type SshSession,
 } from '../ssh/ssh-runner';
 import { createDockerode, requestLogStream } from '../ssh/docker-agent';
-import { MEMBER_ROLES, ServersService } from '../servers.service';
+import {
+  MEMBER_ROLES,
+  OWNER_ONLY_ROLES,
+  ServersService,
+} from '../servers.service';
+import type { WorkspaceRole } from '@prisma/client';
+import type { ContainerActionDto } from './dto/container-action.dto';
 import type { ContainerLogQueryDto } from './dto/container-log-query.dto';
 import { classifyDialFailure } from './docker-readiness';
 import {
@@ -28,6 +34,7 @@ import {
   toDetails,
   toStats,
   toSummary,
+  type ContainerActionResponse,
   type ContainerDetails,
   type ContainerLogs,
   type ContainerStats,
@@ -62,6 +69,7 @@ export class DockerService {
       workspaceId,
       serverId,
       this.cfg.ssh.commandTimeoutMs,
+      MEMBER_ROLES,
       (docker) =>
         docker.listContainers({ all }).then((rows) => rows.map(toSummary)),
     );
@@ -78,6 +86,7 @@ export class DockerService {
       workspaceId,
       serverId,
       this.cfg.ssh.commandTimeoutMs,
+      MEMBER_ROLES,
       (docker) => docker.getContainer(containerId).inspect().then(toDetails),
     );
   }
@@ -102,6 +111,7 @@ export class DockerService {
       workspaceId,
       serverId,
       this.cfg.ssh.commandTimeoutMs,
+      MEMBER_ROLES,
       async (docker) => {
         const container = docker.getContainer(containerId);
         const tty = hasTty(await container.inspect());
@@ -127,6 +137,7 @@ export class DockerService {
       workspaceId,
       serverId,
       this.cfg.docker.statsTimeoutMs,
+      MEMBER_ROLES,
       async (docker) => {
         // stream:false — две выборки внутри одного ответа демона (промер 1064 мс),
         // поэтому у этой операции свой, более длинный дедлайн.
@@ -134,6 +145,41 @@ export class DockerService {
           .getContainer(containerId)
           .stats({ stream: false });
         return toStats(containerId, raw);
+      },
+    );
+  }
+
+  /**
+   * restart доступен только OWNER: перезапуск бьёт по продакшену соседей по
+   * хосту. Ответ берётся из inspect, а не из тела POST (демон на restart
+   * отвечает 204 без payload) — state и startedAt вместе доказывают, что
+   * контейнер действительно поднялся заново.
+   */
+  async act(
+    userId: string,
+    workspaceId: string,
+    serverId: string,
+    containerId: string,
+    dto: ContainerActionDto,
+  ): Promise<ContainerActionResponse> {
+    return this.withDocker(
+      userId,
+      workspaceId,
+      serverId,
+      this.cfg.ssh.commandTimeoutMs,
+      OWNER_ONLY_ROLES,
+      async (docker) => {
+        const container = docker.getContainer(containerId);
+        // t=1: демон не должен ждать graceful-остановки все 10 секунд по
+        // умолчанию — дедлайн панели всё равно короче.
+        await container.restart({ t: 1 });
+        const after = toDetails(await container.inspect());
+        return {
+          containerId,
+          action: dto.action,
+          state: after.state,
+          startedAt: after.startedAt,
+        };
       },
     );
   }
@@ -148,13 +194,14 @@ export class DockerService {
     workspaceId: string,
     serverId: string,
     deadlineMs: number,
+    roles: WorkspaceRole[],
     fn: (docker: Dockerode) => Promise<T>,
   ): Promise<T> {
     const { session } = await this.servers.loadForSsh(
       userId,
       workspaceId,
       serverId,
-      MEMBER_ROLES,
+      roles,
       'authenticated',
     );
     const transport = await this.openTransport(session, deadlineMs);

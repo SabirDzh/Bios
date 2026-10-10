@@ -134,7 +134,12 @@ export class FakeSshRunner implements SshRunner {
       const status = this.dockerStatus[path];
       if (status) {
         res.statusCode = status;
-        res.end(JSON.stringify({ message: 'daemon said no' }));
+        // 204 — ответ демона на restart: тело запрещено, иначе Node рвёт сокет.
+        res.end(
+          status === 204
+            ? undefined
+            : JSON.stringify({ message: 'daemon said no' }),
+        );
         return;
       }
       const raw = this.dockerRawBodies[path];

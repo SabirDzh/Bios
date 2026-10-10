@@ -124,6 +124,18 @@ describe('DockerService', () => {
     return hit;
   }
 
+  /** Участник без OWNER: restart обязан давать 403 именно на роли. */
+  async function inviteMember(email: string): Promise<string> {
+    const invitation = await workspaces.invite(ownerId, workspaceId, email);
+    const user = await users.create({
+      username: email.split('@')[0],
+      email,
+      password: 'secret123',
+    });
+    await workspaces.accept(user.id, workspaceId, invitation.token);
+    return user.id;
+  }
+
   let prisma: PrismaService;
   let users: UsersService;
   let workspaces: WorkspacesService;
@@ -608,6 +620,77 @@ describe('DockerService', () => {
       response: { errorCode: 'TIMEOUT' },
     });
     expect(ssh.transportsClosed).toBe(1);
+  });
+
+  test('restart: POST /restart c t=1, состояние и запуска из инспекта', async () => {
+    ssh.dockerRoutes['/containers/web/json'] = {
+      Id: 'web',
+      Name: '/web',
+      State: {
+        Status: 'running',
+        StartedAt: '2026-10-10T00:00:00.000000000Z',
+      },
+      Config: { Image: 'alpine:3.20' },
+    };
+    ssh.dockerStatus['/containers/web/restart'] = 204;
+    const res = await docker.act(ownerId, workspaceId, serverId, 'web', {
+      action: 'restart',
+    });
+    expect(res).toEqual({
+      containerId: 'web',
+      action: 'restart',
+      state: 'running',
+      startedAt: '2026-10-10T00:00:00.000Z',
+    });
+    expect(requestWith('POST /containers/web/restart')).toContain('t=1');
+  });
+
+  test('restart: дедлайн из ssh.commandTimeoutMs, транспорт закрыт', async () => {
+    ssh.dockerRoutes['/containers/web/json'] = {
+      Id: 'web',
+      State: { Status: 'running', StartedAt: '2026-10-10T00:00:00Z' },
+    };
+    ssh.dockerStatus['/containers/web/restart'] = 204;
+    await docker.act(ownerId, workspaceId, serverId, 'web', {
+      action: 'restart',
+    });
+    expect(ssh.transportDeadlineMs).toEqual([1500]);
+    expect(ssh.transportsClosed).toBe(1);
+  });
+
+  test('restart: завис на stop — 504 TIMEOUT, а не 500 и не вечный запрос', async () => {
+    docker = new DockerService(
+      servers,
+      ssh,
+      testAppConfig({ commandTimeoutMs: 40 }),
+    );
+    ssh.dockerStatus['/containers/web/restart'] = 204;
+    ssh.dockerHangPrefix = 'POST /containers/web/restart';
+    await expect(
+      docker.act(ownerId, workspaceId, serverId, 'web', { action: 'restart' }),
+    ).rejects.toMatchObject({
+      status: 504,
+      response: { errorCode: 'TIMEOUT' },
+    });
+    expect(ssh.transportsClosed).toBe(1);
+  });
+
+  test('restart: участнику не-OWNER — 403, демон не получил ни одного вызова', async () => {
+    const memberId = await inviteMember(`dk-member${n}@example.com`);
+    ssh.dockerRoutes['/containers/web/json'] = { Id: 'web' };
+    ssh.dockerStatus['/containers/web/restart'] = 204;
+    await expect(
+      docker.act(memberId, workspaceId, serverId, 'web', { action: 'restart' }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(ssh.dockerRequests).toHaveLength(0);
+  });
+
+  test('restart: контейнера нет → 404 от демона, inspect не врёт', async () => {
+    await expect(
+      docker.act(ownerId, workspaceId, serverId, 'ghost', {
+        action: 'restart',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
 

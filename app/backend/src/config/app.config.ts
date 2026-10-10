@@ -14,7 +14,7 @@ export interface ThrottleProfileCfg {
 }
 
 export type ThrottleProfileName =
-  'authStrict' | 'recovery' | 'invite' | 'sshOps';
+  'authStrict' | 'recovery' | 'invite' | 'sshOps' | 'dockerReads';
 
 export interface SshCfg {
   connectTimeoutMs: number;
@@ -54,6 +54,7 @@ export interface AppConfig {
     recovery: ThrottleProfileCfg;
     invite: ThrottleProfileCfg;
     sshOps: ThrottleProfileCfg;
+    dockerReads: ThrottleProfileCfg;
   };
   ssh: SshCfg;
   docker: DockerCfg;
@@ -455,6 +456,12 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       }),
       sshOps: parseThrottle(env, 'THROTTLE_SSH_OPS', {
         limit: 6,
+        ttlMs: 60000,
+      }),
+      // Чтения Docker (списки, детали, логи, stats) — частые и дешёвые для
+      // панели, но каждый стоит SSH-канала к хосту клиента.
+      dockerReads: parseThrottle(env, 'THROTTLE_DOCKER_READS', {
+        limit: 60,
         ttlMs: 60000,
       }),
     },

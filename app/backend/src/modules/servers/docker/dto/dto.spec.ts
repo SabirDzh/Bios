@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { CONTAINER_ID_RE, ContainerIdsDto } from './container-ids.dto';
+import { ContainerActionDto } from './container-action.dto';
 
 /**
  * Настоящие UUIDv7: иначе падения приходят от наследуемых @IsUUID('7'), а не от
@@ -57,5 +58,23 @@ describe('ContainerIdsDto', () => {
     expect(
       CONTAINER_ID_RE.test('e91e3ee4f0c1c3e2b1a0'.repeat(3).slice(0, 64)),
     ).toBe(true);
+  });
+});
+
+describe('ContainerActionDto', () => {
+  function invalidAction(value: Record<string, unknown>): string[] {
+    const dto = plainToInstance(ContainerActionDto, value);
+    return validateSync(dto, { whitelist: true }).map((e) => e.property);
+  }
+
+  test('принимает только restart', () => {
+    expect(invalidAction({ action: 'restart' })).toEqual([]);
+    for (const bad of ['stop', 'start', 'recreate', 'kill', '', 1, null]) {
+      expect(invalidAction({ action: bad })).toContain('action');
+    }
+  });
+
+  test('без action — тоже 400 (поле обязательное)', () => {
+    expect(invalidAction({})).toContain('action');
   });
 });

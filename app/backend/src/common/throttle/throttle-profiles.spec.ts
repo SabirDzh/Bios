@@ -12,6 +12,9 @@ class Dummy {
   @ThrottleProfile('sshOps')
   ssh(this: void) {}
 
+  @ThrottleProfile('dockerReads')
+  reads(this: void) {}
+
   plain(this: void) {}
 }
 
@@ -23,6 +26,7 @@ describe('buildThrottlerOptions', () => {
       recovery: { limit: 5, ttlMs: 60000 },
       invite: { limit: 30, ttlMs: 60000 },
       sshOps: { limit: 6, ttlMs: 60000 },
+      dockerReads: { limit: 60, ttlMs: 60000 },
     },
   } as AppConfig;
   const reflector = new Reflector();
@@ -34,7 +38,7 @@ describe('buildThrottlerOptions', () => {
     } as unknown as ExecutionContext;
   }
 
-  test('builds 5 named throttlers with config values (ttlMs -> ttl)', () => {
+  test('builds 6 named throttlers with config values (ttlMs -> ttl)', () => {
     const { throttlers } = buildThrottlerOptions(cfg, reflector);
     expect(throttlers.map((t) => [t.name, t.limit, t.ttl])).toEqual([
       ['global', 120, 60000],
@@ -42,6 +46,7 @@ describe('buildThrottlerOptions', () => {
       ['recovery', 5, 60000],
       ['invite', 30, 60000],
       ['sshOps', 6, 60000],
+      ['dockerReads', 60, 60000],
     ]);
   });
 
@@ -56,5 +61,12 @@ describe('buildThrottlerOptions', () => {
     expect(sshOps).toBeDefined();
     expect(sshOps?.(ctxFor(Dummy.prototype.plain))).toBe(true);
     expect(sshOps?.(ctxFor(Dummy.prototype.ssh))).toBe(false);
+
+    const dockerReads = throttlers.find(
+      (t) => t.name === 'dockerReads',
+    )?.skipIf;
+    expect(dockerReads).toBeDefined();
+    expect(dockerReads?.(ctxFor(Dummy.prototype.plain))).toBe(true);
+    expect(dockerReads?.(ctxFor(Dummy.prototype.reads))).toBe(false);
   });
 });

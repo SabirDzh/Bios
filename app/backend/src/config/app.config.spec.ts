@@ -142,6 +142,7 @@ describe('ssh, network policy, crypto keys and sshOps', () => {
       allowLoopback: false,
     });
     expect(cfg.throttle.sshOps).toEqual({ limit: 6, ttlMs: 60000 });
+    expect(cfg.throttle.dockerReads).toEqual({ limit: 60, ttlMs: 60000 });
   });
 
   test('loopback разрешён только явным флагом', () => {
@@ -286,11 +287,13 @@ describe('ssh, network policy, crypto keys and sshOps', () => {
         SSH_CONNECT_TIMEOUT_MS: '2500',
         AGENT_VERSION: '1.2.3',
         THROTTLE_SSH_OPS_LIMIT: '2',
+        THROTTLE_DOCKER_READS_LIMIT: '20',
       }),
     );
     expect(cfg.ssh.connectTimeoutMs).toBe(2500);
     expect(cfg.ssh.agentVersion).toBe('1.2.3');
     expect(cfg.throttle.sshOps.limit).toBe(2);
+    expect(cfg.throttle.dockerReads.limit).toBe(20);
     expect(() => loadAppConfig(withKeys({ AGENT_VERSION: 'v1' }))).toThrow(
       /AGENT_VERSION/,
     );

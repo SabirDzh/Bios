@@ -171,6 +171,18 @@ export interface LogLine {
   text: string;
 }
 
+/**
+ * Ответ на действие. `status` («Up 2 hours») в inspect не живёт — он есть
+ * только в списке, поэтому поле `startedAt`: новый таймстемп запуска и есть
+ * доказательство, что restart случился.
+ */
+export interface ContainerActionResponse {
+  containerId: string;
+  action: 'restart';
+  state: string;
+  startedAt: string | null;
+}
+
 export interface ContainerLogs {
   containerId: string;
   tty: boolean;

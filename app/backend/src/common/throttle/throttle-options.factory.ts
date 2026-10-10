@@ -57,6 +57,10 @@ export function buildThrottlerOptions(
         ...entry('sshOps', cfg.throttle.sshOps),
         skipIf: skipUnless('sshOps'),
       },
+      {
+        ...entry('dockerReads', cfg.throttle.dockerReads),
+        skipIf: skipUnless('dockerReads'),
+      },
     ],
   };
 }
