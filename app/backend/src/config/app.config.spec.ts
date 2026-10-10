@@ -46,7 +46,7 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.cookies.secure).toBe(false);
     expect(cfg.cookies.httpOnly).toBe(true);
     expect(cfg.email.verifyMx).toBe(true);
-    expect(cfg.email.mxTimeoutMs).toBe(3000);
+    expect(cfg.email.mxTimeoutMs).toBe(1500);
     expect(cfg.email.extraBlockedDomains).toEqual([]);
     expect(cfg.invitations.ttlSec).toBe(86400);
     expect(cfg.tokens.confirmTtlSec).toBe(86400);

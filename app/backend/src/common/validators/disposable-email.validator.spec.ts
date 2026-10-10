@@ -2,7 +2,12 @@ import { promises as dns } from 'node:dns';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from '../../modules/users/dto/create-user.dto';
-import { hasMxRecords, isDisposableDomain } from './disposable-email.validator';
+import {
+  clearMxCacheForTests,
+  hasMxRecords,
+  hasMxRecordsCached,
+  isDisposableDomain,
+} from './disposable-email.validator';
 import { reloadAppConfigForTests } from '../../config/app-config.module';
 
 jest.mock('node:dns', () => ({
@@ -75,6 +80,7 @@ describe('MX record check', () => {
     delete process.env.EMAIL_VERIFY_MX;
     delete process.env.EMAIL_MX_TIMEOUT_MS;
     reloadAppConfigForTests();
+    clearMxCacheForTests();
   });
 
   test('hasMxRecords: true with MX, false without or on DNS error', async () => {
@@ -116,5 +122,45 @@ describe('MX record check', () => {
     });
     const errors = await validate(dto);
     expect(errors.find((e) => e.property === 'email')).toBeUndefined();
+  });
+});
+
+describe('MX cache', () => {
+  beforeEach(() => {
+    resolveMx.mockReset();
+    resolveMx.mockResolvedValue(MX);
+    delete process.env.EMAIL_VERIFY_MX;
+    delete process.env.EMAIL_MX_TIMEOUT_MS;
+    reloadAppConfigForTests();
+    clearMxCacheForTests();
+  });
+
+  test('allowlisted providers skip DNS entirely', async () => {
+    await expect(hasMxRecordsCached('gmail.com')).resolves.toBe(true);
+    await expect(hasMxRecordsCached('Outlook.COM')).resolves.toBe(true);
+    expect(resolveMx).not.toHaveBeenCalled();
+  });
+
+  test('positive result is cached: one DNS query for repeats', async () => {
+    await expect(hasMxRecordsCached('corp.example.com')).resolves.toBe(true);
+    await expect(hasMxRecordsCached('corp.example.com')).resolves.toBe(true);
+    expect(resolveMx).toHaveBeenCalledTimes(1);
+  });
+
+  test('negative result is cached (fail closed preserved)', async () => {
+    resolveMx.mockResolvedValue([]);
+    await expect(hasMxRecordsCached('dead.example.com')).resolves.toBe(false);
+    await expect(hasMxRecordsCached('dead.example.com')).resolves.toBe(false);
+    expect(resolveMx).toHaveBeenCalledTimes(1);
+  });
+
+  test('concurrent queries for one domain deduplicate in-flight', async () => {
+    const [a, b] = await Promise.all([
+      hasMxRecordsCached('burst.example.com'),
+      hasMxRecordsCached('burst.example.com'),
+    ]);
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+    expect(resolveMx).toHaveBeenCalledTimes(1);
   });
 });

@@ -14,8 +14,17 @@ import { getAppConfig } from '../../config/app-config.module';
 const DISPOSABLE_SET = new Set(disposableDomains.map((d) => d.toLowerCase()));
 
 function extraBlockedDomains(): Set<string> {
-  return new Set(getAppConfig().email.extraBlockedDomains);
+  // Мемоизация по идентичности массива: конфиг иммутабелен между
+  // reloadAppConfigForTests, поэтому пересборки Set на каждый вызов нет,
+  // а тесты с новым env всё равно видят свежий список.
+  const list = getAppConfig().email.extraBlockedDomains;
+  if (!extraCache || extraCache.list !== list) {
+    extraCache = { list, set: new Set(list) };
+  }
+  return extraCache.set;
 }
+
+let extraCache: { list: string[]; set: Set<string> } | undefined;
 
 function domainOf(email: string): string | undefined {
   const at = email.lastIndexOf('@');
@@ -64,6 +73,71 @@ export async function hasMxRecords(domain: string): Promise<boolean> {
   }
 }
 
+// Кэш MX-ответов: записи меняются редко, а каждый miss держит регистрацию
+// до таймаута. Positive TTL длинный, negative короткий (свежий домен может
+// получить MX). In-flight дедуп: пачка регистраций с одного корпоративного
+// домена даёт один DNS-запрос. Мульти-инстанс не проблема: под кэшем всё
+// равно системный DNS-кэш, расхождение — в пределах TTL.
+const MX_POSITIVE_TTL_MS = 24 * 3600 * 1000;
+const MX_NEGATIVE_TTL_MS = 10 * 60 * 1000;
+const MX_CACHE_MAX = 5000;
+
+const mxCache = new Map<string, { ok: boolean; at: number }>();
+const mxPending = new Map<string, Promise<boolean>>();
+
+/** Крупные провайдеры: MX заведомо есть, DNS-запрос не нужен вообще. */
+const MX_ALLOWLIST = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'yahoo.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'yandex.ru',
+  'ya.ru',
+  'mail.ru',
+  'bk.ru',
+  'inbox.ru',
+  'list.ru',
+  'proton.me',
+  'protonmail.com',
+]);
+
+export async function hasMxRecordsCached(domain: string): Promise<boolean> {
+  const key = domain.toLowerCase();
+  if (MX_ALLOWLIST.has(key)) return true;
+  const hit = mxCache.get(key);
+  if (
+    hit &&
+    Date.now() - hit.at < (hit.ok ? MX_POSITIVE_TTL_MS : MX_NEGATIVE_TTL_MS)
+  ) {
+    return hit.ok;
+  }
+  const inflight = mxPending.get(key);
+  if (inflight) return inflight;
+  const query = hasMxRecords(key).finally(() => {
+    mxPending.delete(key);
+  });
+  mxPending.set(key, query);
+  const ok = await query;
+  if (!mxCache.has(key) && mxCache.size >= MX_CACHE_MAX) {
+    const oldest = mxCache.keys().next();
+    if (!oldest.done) mxCache.delete(oldest.value);
+  }
+  mxCache.set(key, { ok, at: Date.now() });
+  return ok;
+}
+
+/** Сброс MX-кэша — только для тестов. */
+export function clearMxCacheForTests(): void {
+  mxCache.clear();
+  mxPending.clear();
+}
+
 @ValidatorConstraint({ name: 'isNotDisposableEmail' })
 class IsNotDisposableEmailConstraint implements ValidatorConstraintInterface {
   validate(email: unknown): boolean {
@@ -97,7 +171,8 @@ class IsDeliverableEmailConstraint implements ValidatorConstraintInterface {
     const domain = domainOf(email.trim().toLowerCase());
     if (!domain) return false;
     // Fail closed: нет MX, DNS-ошибка или таймаут — отказ в регистрации.
-    return hasMxRecords(domain);
+    // Идём через кэш: повторные домены не ждут DNS заново.
+    return hasMxRecordsCached(domain);
   }
 
   defaultMessage(args: ValidationArguments): string {

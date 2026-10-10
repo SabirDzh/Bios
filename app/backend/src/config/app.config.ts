@@ -576,9 +576,12 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     email: {
       verifyMx: env.EMAIL_VERIFY_MX !== 'false',
+      // Дефолт 1500: живой MX отвечает за 20–200мс; всё дольше — мёртвый
+      // домен или больная сеть, где fail-closed честен. Первый запрос с
+      // нового домена — единственный, кто ждёт; дальше работает MX-кэш.
       mxTimeoutMs: positiveInt(env.EMAIL_MX_TIMEOUT_MS, 'EMAIL_MX_TIMEOUT_MS', {
         min: 1,
-        fallback: 3000,
+        fallback: 1500,
       }),
       extraBlockedDomains: parseDomainList(env.EMAIL_EXTRA_BLOCKED_DOMAINS),
     },
