@@ -101,7 +101,11 @@ function parseOrigins(
     if (isProduction) {
       throw new Error('Missing required CORS_ORIGINS in production');
     }
-    return ['http://localhost:5173', 'http://localhost:1420'];
+    return [
+      'http://localhost:5173',
+      'http://localhost:1420',
+      'http://tauri.localhost',
+    ];
   }
   const origins = raw
     .split(',')

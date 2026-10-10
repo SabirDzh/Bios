@@ -24,6 +24,7 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.cors.origins).toEqual([
       'http://localhost:5173',
       'http://localhost:1420',
+      'http://tauri.localhost',
     ]);
     expect(cfg.throttle.global).toEqual({ limit: 120, ttlMs: 60000 });
     expect(cfg.throttle.authStrict).toEqual({ limit: 10, ttlMs: 60000 });
@@ -86,7 +87,6 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       withKeys({
         NODE_ENV: 'production',
         CORS_ORIGINS: 'https://app.example.com',
-        // Production требует и ключ шифрования серверов: здесь он не предмет теста.
         SERVER_CRYPTO_KEY: Buffer.alloc(32, 7).toString('base64'),
       }),
     );
