@@ -1,0 +1,30 @@
+.error-state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-muted);
+}
+
+.error-state-icon {
+  color: var(--danger);
+  flex: none;
+  margin-top: 2px;
+}
+
+.error-state-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-state-title {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.error-state-description {
+  color: var(--text);
+  margin-top: 2px;
+}

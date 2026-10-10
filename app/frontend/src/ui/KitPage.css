@@ -1,0 +1,31 @@
+.kit-note {
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+.kit-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.kit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.kit-row-top {
+  align-items: flex-start;
+}
+
+.kit-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
