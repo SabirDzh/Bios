@@ -31,7 +31,7 @@ describe('buildThrottlerOptions', () => {
     return {
       getHandler: () => fn,
       getClass: () => Dummy,
-    } as ExecutionContext;
+    } as unknown as ExecutionContext;
   }
 
   test('builds 5 named throttlers with config values (ttlMs -> ttl)', () => {
