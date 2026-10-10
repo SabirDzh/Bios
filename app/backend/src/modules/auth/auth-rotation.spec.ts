@@ -261,6 +261,34 @@ describe('auth rotation lifecycle (postgres)', () => {
     expect(known).toEqual(existing);
   });
 
+  test('gmail aliases collapse to one account (canonicalEmail)', async () => {
+    n += 1;
+    const k = n;
+    const first = await users.create({
+      username: `aliasuser${k}`,
+      email: `alias.test${k}+spam@gmail.com`,
+      password: 'secret123',
+    });
+    expect(first.canonicalEmail).toBe(`aliastest${k}@gmail.com`);
+    // Тот же ящик в другой алиасной форме — дубль, та же 400, что и обычно.
+    await expect(
+      users.create({
+        username: `aliasuser${k}x`,
+        email: `aliasTest${k}@gmail.com`,
+        password: 'secret123',
+      }),
+    ).rejects.toThrow();
+    // Login и recovery находят аккаунт по любой алиасной форме.
+    const pair = await auth.login({
+      email: `a.l.i.a.s.t.e.s.t${k}+other@gmail.com`,
+      password: 'secret123',
+    });
+    expect(jwtTokens.verifyAccess(pair.accessToken).sub).toBe(first.id);
+    await expect(
+      users.requestRecovery(`aliastest${k}@gmail.com`),
+    ).resolves.toEqual({ message: 'Recovery email have been send' });
+  });
+
   test('expired confirm token is rejected and removed', async () => {
     const user = await registerUser();
     const expired = await prisma.token.create({

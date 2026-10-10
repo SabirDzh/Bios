@@ -37,6 +37,7 @@ describe('MaintenanceService.purgeExpired', () => {
       data: {
         username: 'janitor',
         email: 'janitor@example.com',
+        canonicalEmail: 'janitor@example.com',
         password: 'x'.repeat(60),
       },
     });

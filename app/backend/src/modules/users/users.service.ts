@@ -8,6 +8,7 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import * as argon2 from 'argon2';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { canonicalizeEmail } from '../../common/email/canonical-email';
 import { TokensService } from '../tokens/tokens.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { TokenType, RefreshSessionStatus, User } from '@prisma/client';
@@ -24,9 +25,13 @@ export class UsersService {
   async create(createUserDto: CreateUserDto) {
     // Defense in depth: DTO уже lowercas'ит, но нормализуем и тут
     // (сервис могут вызвать в обход ValidationPipe).
+    // canonicalEmail душит алиасы (точки/плюс-теги Gmail и др.): дубль
+    // упирается в @unique, гонки исключены.
+    const email = createUserDto.email.trim().toLowerCase();
     const data = {
       username: createUserDto.username.trim().toLowerCase(),
-      email: createUserDto.email.trim().toLowerCase(),
+      email,
+      canonicalEmail: canonicalizeEmail(email),
       password: await argon2.hash(createUserDto.password),
     };
     let user: User;
@@ -76,8 +81,10 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
+    // Поиск по канону: login/recovery работают с любой алиасной формой
+    // (`John.Doe+spam@gmail.com` находит `johndoe@gmail.com`).
     const user = await this.prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
+      where: { canonicalEmail: canonicalizeEmail(email) },
     });
     if (!user) throw new NotFoundException();
 
@@ -149,7 +156,9 @@ export class UsersService {
     const user = await this.findById(token.userId);
 
     await this.prisma.$transaction(async (tx) => {
-      const deleted = await tx.token.deleteMany({ where: { id: confirmationId } });
+      const deleted = await tx.token.deleteMany({
+        where: { id: confirmationId },
+      });
       if (deleted.count !== 1) throw new NotFoundException();
       await tx.user.update({
         where: { id: user.id },

@@ -11,6 +11,7 @@ import { Prisma, WorkspaceRole, InvitationStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 import { getAppConfig } from '../../config/app-config.module';
+import { canonicalizeEmail } from '../../common/email/canonical-email';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import {
   CursorPage,
@@ -162,8 +163,13 @@ export class WorkspacesService {
     await this.requireMembership(inviterId, workspaceId, [WorkspaceRole.OWNER]);
     const normalizedEmail = email.trim().toLowerCase();
 
+    // Проверка членства по канону: `John.Doe+spam@gmail.com` — тот же
+    // участник, что `johndoe@gmail.com` (тот же ящик).
     const existingMember = await this.prisma.workspaceMember.findFirst({
-      where: { workspaceId, user: { email: normalizedEmail } },
+      where: {
+        workspaceId,
+        user: { canonicalEmail: canonicalizeEmail(normalizedEmail) },
+      },
     });
     if (existingMember) throw new ConflictException('already a member');
 
@@ -256,7 +262,9 @@ export class WorkspacesService {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
     });
-    if (user.email.trim().toLowerCase() !== invitation.email) {
+    // Сравнение по канону: инвайт на алиас принимает владелец ящика
+    // в любой его алиасной форме.
+    if (canonicalizeEmail(user.email) !== canonicalizeEmail(invitation.email)) {
       throw new ForbiddenException();
     }
     const alreadyMember = await this.prisma.workspaceMember.findUnique({

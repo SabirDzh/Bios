@@ -14,6 +14,9 @@ model User {
   id              String           @id @default(uuid(7))
   username        String           @unique
   email           String           @unique
+  /// Канон для дедупликации алиасов (точки/плюс-теги Gmail и др.).
+  /// См. canonicalizeEmail; вычисляется в UsersService при создании.
+  canonicalEmail  String           @unique
   password        String
   confirmed       Boolean          @default(false)
   updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
