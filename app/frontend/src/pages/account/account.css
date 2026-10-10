@@ -1,0 +1,50 @@
+.acc-section {
+  max-width: 520px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.acc-section h2 {
+  margin-bottom: var(--space-3);
+}
+
+.acc-profile {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.acc-profile dt {
+  color: var(--text-muted);
+}
+
+.acc-profile dd {
+  margin: 0;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.acc-theme {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.acc-theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.acc-theme-option input {
+  accent-color: var(--accent);
+}

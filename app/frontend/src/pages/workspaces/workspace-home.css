@@ -1,0 +1,81 @@
+.wh-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.wh-header h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wh-section {
+  max-width: 640px;
+}
+
+.wh-section h2 {
+  margin-bottom: var(--space-3);
+}
+
+.invite-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.invite-form {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.invite-form .field {
+  flex: 1;
+}
+
+.invite-form .btn {
+  margin-top: 20px;
+}
+
+.invite-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.invite-result-title {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.invite-field {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.invite-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.invite-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong);
+}
+
+.invite-hint {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
