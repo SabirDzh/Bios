@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsIn,
   IsInt,
@@ -7,11 +7,16 @@ import {
   Length,
   Matches,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
 import { ServerAuthType } from '@prisma/client';
 import { CredentialMatchesAuthType } from '../../../common/validators/credential-matches-auth-type.validator';
+import {
+  DISPLAY_NAME_MESSAGE,
+  DISPLAY_NAME_PATTERN,
+} from '../../../common/validators/display-name.validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -27,11 +32,13 @@ export class CreateServerDto {
   @Transform(trim)
   @IsString()
   @Length(1, 64)
+  @Matches(DISPLAY_NAME_PATTERN, { message: DISPLAY_NAME_MESSAGE })
   name: string;
 
   /** Только hostname или IPv4: без пробелов, без shell-метасимволов, без IPv6. */
   @Transform(lower)
   @IsString()
+  @MaxLength(253)
   @Matches(/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/, {
     message:
       'host must be a hostname or IPv4 literal without spaces or shell metacharacters',
@@ -39,7 +46,11 @@ export class CreateServerDto {
   host: string;
 
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && /^\d+$/.test(value.trim())
+      ? parseInt(value.trim(), 10)
+      : value,
+  )
   @IsInt()
   @Min(1)
   @Max(65535)
