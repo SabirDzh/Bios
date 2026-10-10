@@ -7,7 +7,6 @@ import {
   Patch,
   Res,
   HttpCode,
-  Param,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Inject } from '@nestjs/common';
@@ -18,10 +17,8 @@ import { APP_CONFIG, type AppConfig } from '../../config/app.config';
 import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RequestRecoveryDto } from './dto/request-recovery.dto';
-import { FindRecoveryByIdDto } from './dto/find-recovery.dto';
 import { RecoveryPasswordDto } from './dto/recovery-password.dto';
-import { FindConfirmationByIdDto } from './dto/find-confirmation.dto';
-import { TokenType } from '@prisma/client';
+import { ConfirmDto } from './dto/confirm.dto';
 import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 
@@ -35,6 +32,7 @@ export class UsersController {
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(200)
+  @ThrottleProfile('authStrict')
   async changePassword(
     @User() user: JwtUserPayload,
     @Res({ passthrough: true }) res: Response,
@@ -51,26 +49,19 @@ export class UsersController {
     return await this.service.requestRecovery(requestRecoveryDto.email);
   }
 
-  @Patch('confirm/:confirmationId')
-  async confirm(@Param() findConfirmationByIdDto: FindConfirmationByIdDto) {
-    return await this.service.confirm(findConfirmationByIdDto.confirmationId);
+  // Токены confirm/recovery принимаются только в body (S3):
+  // в URL они оседали бы в access-логах, истории браузера и прокси.
+  @Patch('confirm')
+  @ThrottleProfile('recovery')
+  async confirm(@Body() confirmDto: ConfirmDto) {
+    return await this.service.confirm(confirmDto.confirmationId);
   }
 
-  @Get('recovery/:recoveryId')
-  async findRecoveryToken(@Param() findRecoveryByIdDto: FindRecoveryByIdDto) {
-    return await this.service.findTokenById(
-      findRecoveryByIdDto.recoveryId,
-      TokenType.RECOVERY,
-    );
-  }
-
-  @Patch('recovery/:recoveryId')
-  async recovery(
-    @Param() findRecoveryByIdDto: FindRecoveryByIdDto,
-    @Body() recoveryPasswordDto: RecoveryPasswordDto,
-  ) {
+  @Patch('recovery')
+  @ThrottleProfile('recovery')
+  async recovery(@Body() recoveryPasswordDto: RecoveryPasswordDto) {
     return await this.service.recoveryPassword(
-      findRecoveryByIdDto.recoveryId,
+      recoveryPasswordDto.recoveryId,
       recoveryPasswordDto,
     );
   }

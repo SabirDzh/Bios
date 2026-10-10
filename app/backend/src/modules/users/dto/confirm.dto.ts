@@ -1,6 +1,6 @@
 import { IsUUID } from 'class-validator';
 
-export class FindRecoveryByIdDto {
+export class ConfirmDto {
   @IsUUID('7')
-  recoveryId: string;
+  confirmationId: string;
 }
