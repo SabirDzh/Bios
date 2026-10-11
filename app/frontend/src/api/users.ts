@@ -7,8 +7,13 @@ export interface ChangePasswordInput {
 }
 
 export const usersApi = {
-  /** Смена пароля отзывает все сессии пользователя и очищает куки. */
+  /**
+   * Смена пароля отзывает все сессии пользователя и очищает куки.
+   * Ретрай после refresh разрешён: он случается только ДО исполнения (истёк
+   * access-токен), а успешная смена возвращает 200, а не 401 — повтор
+   * невозможен. Без него протухший access давал сырое «Unauthorized».
+   */
   changePassword(input: ChangePasswordInput): Promise<void> {
-    return apiPatch<void>('/users/change-password', input, { retryOnAuth: false });
+    return apiPatch<void>('/users/change-password', input);
   },
 };

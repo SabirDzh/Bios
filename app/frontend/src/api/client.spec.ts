@@ -60,6 +60,21 @@ test('4xx без повтора → ApiError с текстом из envelope', a
   expect((err as ApiError).message).toBe('workspace not found');
 });
 
+test('424 → payload с errorCode сохраняется в ApiError (словарь кодов)', async () => {
+  const fetchMock = vi.fn(async () =>
+    jsonResponse(424, {
+      statusCode: 424,
+      errorCode: 'TARGET_BLOCKED',
+      message: 'target address is not allowed',
+    }),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+
+  const err = await apiGet('/servers/1/test').catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect((err as ApiError).payload).toMatchObject({ errorCode: 'TARGET_BLOCKED' });
+});
+
 test('после failed refresh ошибка пробрасывается, повтора нет', async () => {
   const calls: string[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

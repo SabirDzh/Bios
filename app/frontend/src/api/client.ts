@@ -1,3 +1,5 @@
+import type { CursorParams } from './types';
+
 function apiBase(): string {
   // import.meta.env существует только под Vite; вне бандла — дефолт.
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
@@ -8,6 +10,17 @@ const API_PREFIX = '/api/v1';
 
 export function apiUrl(path: string): string {
   return `${apiBase()}${API_PREFIX}${path}`;
+}
+
+/** Query-строка курсорной пагинации; пустые параметры не добавляются. */
+export function withCursor(path: string, params?: CursorParams): string {
+  if (!params || (params.cursor === undefined && params.limit === undefined)) {
+    return path;
+  }
+  const qs = new URLSearchParams();
+  if (params.cursor !== undefined) qs.set('cursor', params.cursor);
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  return `${path}?${qs.toString()}`;
 }
 
 /** Ошибка API: повторяет envelope бэкенда { statusCode, message }. */
@@ -106,16 +119,15 @@ export async function apiFetch<T>(
     await refreshSession();
     const retryRes = await doFetch(path, fetchInit);
     if (!retryRes.ok) {
-      throw new ApiError(
-        retryRes.status,
-        errorMessage(retryRes.status, await parseBody(retryRes)),
-      );
+      const body = await parseBody(retryRes);
+      throw new ApiError(retryRes.status, errorMessage(retryRes.status, body), body);
     }
     return (await parseBody(retryRes)) as T;
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, errorMessage(res.status, await parseBody(res)));
+    const body = await parseBody(res);
+    throw new ApiError(res.status, errorMessage(res.status, body), body);
   }
   return (await parseBody(res)) as T;
 }

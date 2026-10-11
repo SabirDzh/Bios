@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { ApiError } from '../api/client';
-import { codeText, errorText } from './errorText';
+import { apiErrorCode, codeText, errorText } from './errorText';
 
 const apiError = (status: number, message: string, payload?: unknown) =>
   new ApiError(status, message, payload);
@@ -79,6 +79,42 @@ describe('errorText', () => {
     expect(errorText(apiError(500, 'Internal server error'))).toBe(
       'Ошибка панели. Попробуйте ещё раз.',
     );
+  });
+
+  test('serverCreate 409 → занятое имя или отпечаток', () => {
+    expect(
+      errorText(apiError(409, 'server name already used'), 'serverCreate'),
+    ).toContain('уже занято');
+  });
+
+  test('serverCreate 403 → только владелец', () => {
+    expect(errorText(apiError(403, 'Forbidden'), 'serverCreate')).toContain(
+      'только владелец',
+    );
+  });
+
+  test('serverTest 409 → отпечаток не совпал', () => {
+    expect(
+      errorText(apiError(409, 'host key fingerprint does not match'), 'serverTest'),
+    ).toContain('не совпал');
+  });
+
+  test('serverTest 429 → троттлинг SSH-операций', () => {
+    expect(errorText(apiError(429, 'ThrottlerException'), 'serverTest')).toContain(
+      'SSH-операций',
+    );
+  });
+});
+
+describe('apiErrorCode', () => {
+  test('код из envelope, null для прочего', () => {
+    expect(
+      apiErrorCode(
+        apiError(424, 'x', { statusCode: 424, errorCode: 'AUTH_FAILED' }),
+      ),
+    ).toBe('AUTH_FAILED');
+    expect(apiErrorCode(apiError(404, 'x'))).toBeNull();
+    expect(apiErrorCode(new TypeError('fetch'))).toBeNull();
   });
 });
 
