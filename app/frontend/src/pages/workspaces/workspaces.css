@@ -8,12 +8,10 @@
 
 .ws-skeleton {
   margin-top: var(--space-4);
-  max-width: 720px;
 }
 
 .ws-empty {
   margin-top: var(--space-5);
-  max-width: 720px;
 }
 
 .ws-form {

@@ -25,7 +25,9 @@ h2,
 h3 {
   margin: 0;
   color: var(--text-strong);
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 h1 {
@@ -132,10 +134,40 @@ samp {
 
 .page {
   padding: var(--space-5);
-  max-width: 1200px;
 }
 
 .muted-note {
   margin-top: var(--space-2);
   color: var(--text-muted);
+}
+
+/* Общий язык появления списков: каскад строк/карточек (Y + opacity на GPU,
+   stagger 18мс через --i). Плавный hover таблиц — тоже отсюда, чтобы все
+   страницы двигались одинаково. */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.table-wrap.stagger table > tbody > tr,
+ul.stagger > li {
+  animation: row-in 200ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+
+.table-wrap.stagger table td {
+  transition: background-color var(--dur-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-wrap.stagger table > tbody > tr,
+  ul.stagger > li {
+    animation: none;
+  }
 }
