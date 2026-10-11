@@ -18,6 +18,9 @@
   background: var(--bg);
   color: var(--text-strong);
   font-size: var(--text-base);
+  transition:
+    border-color var(--dur-pop),
+    box-shadow var(--dur-pop);
 }
 
 .field-input::placeholder {
@@ -36,6 +39,52 @@
 
 .field-input:disabled {
   opacity: 0.5;
+}
+
+.field-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.field-control .field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-control.has-trailing .field-input {
+  padding-right: 32px;
+}
+
+.field-eye {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    color var(--dur-pop),
+    background-color var(--dur-pop);
+}
+
+.field-eye:hover {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.field-eye:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
 }
 
 .field-input-error {

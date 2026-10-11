@@ -3,15 +3,20 @@ import type { InputHTMLAttributes, ReactNode } from 'react';
 import './TextField.css';
 
 interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
-  label: string;
+  /** Подпись над полем. Можно опустить (тогда нужен aria-label): страницы
+      auth показывают только плейсхолдеры. */
+  label?: string;
   hint?: ReactNode;
   error?: string | null;
+  /** Кнопка/иконка внутри поля справа (глазок пароля и т.п.). */
+  trailing?: ReactNode;
 }
 
 export function TextField({
   label,
   hint,
   error,
+  trailing,
   id,
   className,
   ...rest
@@ -23,16 +28,25 @@ export function TextField({
 
   return (
     <div className={['field', className].filter(Boolean).join(' ')}>
-      <label className="field-label" htmlFor={inputId}>
-        {label}
-      </label>
-      <input
-        id={inputId}
-        className={error ? 'field-input field-input-error' : 'field-input'}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={[hintId, errorId].filter(Boolean).join(' ') || undefined}
-        {...rest}
-      />
+      {label && (
+        <label className="field-label" htmlFor={inputId}>
+          {label}
+        </label>
+      )}
+      <div
+        className={['field-control', trailing ? 'has-trailing' : '']
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <input
+          id={inputId}
+          className={error ? 'field-input field-input-error' : 'field-input'}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={[hintId, errorId].filter(Boolean).join(' ') || undefined}
+          {...rest}
+        />
+        {trailing}
+      </div>
       {hint && !error && (
         <div className="field-hint" id={hintId}>
           {hint}
