@@ -1,0 +1,116 @@
+.dp-skeleton {
+  margin-top: var(--space-4);
+}
+
+.dp-empty {
+  margin-top: var(--space-5);
+}
+
+.dp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.dp-filter {
+  width: 220px;
+}
+
+.dp-reset {
+  margin-bottom: 2px;
+}
+
+.dp-row {
+  cursor: pointer;
+}
+
+.dp-row:focus-visible {
+  outline: var(--focus);
+  outline-offset: -2px;
+}
+
+.dp-link {
+  color: var(--text-strong);
+}
+
+.dp-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.dp-config {
+  min-width: 130px;
+}
+
+.dp-project {
+  min-width: 130px;
+}
+
+.dp-unknown,
+.dp-empty-cell {
+  color: var(--text-muted);
+}
+
+.dp-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.dp-note {
+  margin-top: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Деталь: шапка фиксирована, журнал занимает остаток высоты и скроллится сам. */
+.dp-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.dp-meta-sep {
+  margin: 0 6px;
+}
+
+.dp-tech {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.dp-tech-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dp-tech-label {
+  color: var(--text-muted);
+}
+
+.dp-tech code {
+  overflow-wrap: anywhere;
+}
+
+.dp-steps {
+  margin-bottom: var(--space-3);
+}
+
+.dp-feedback:empty {
+  display: none;
+}
+
+.dp-feedback {
+  margin-bottom: var(--space-3);
+}
+
+.dp-log {
+  flex: 1;
+  min-height: 200px;
+}
