@@ -18,7 +18,7 @@ import { setLastWorkspaceId } from '../api/lastWorkspace';
 import { setThemeMode, type Theme } from '../theme/theme';
 import { Skeleton } from '../ui/Skeleton';
 import { useWorkspaceList } from '../pages/workspaces/workspaces.queries';
-import { navSections } from './nav';
+import { globalNav, workspaceNav, workspaceSections } from './nav';
 import { ConnectionBanner } from './ConnectionBanner';
 import './Shell.css';
 
@@ -79,7 +79,8 @@ function ThemeToggle() {
 
 function WorkspaceSwitcher() {
   const match = useMatch('/w/:workspaceId');
-  const activeId = match?.params.workspaceId;
+  const sub = useMatch('/w/:workspaceId/*');
+  const activeId = match?.params.workspaceId ?? sub?.params.workspaceId;
   const navigate = useNavigate();
   const { open, setOpen, ref } = usePopover();
   const list = useWorkspaceList();
@@ -92,6 +93,10 @@ function WorkspaceSwitcher() {
   const label = activeId
     ? (active.data?.name ?? (active.isError ? 'Нет доступа' : '…'))
     : 'Выберите пространство';
+
+  // IA §4.2: смена пространства сохраняет подраздел, сущность отбрасывается.
+  const section = (sub?.params['*'] ?? '').split('/')[0];
+  const suffix = workspaceSections.has(section) ? `/${section}` : '';
 
   return (
     <div className="ws-switcher" ref={ref}>
@@ -139,7 +144,7 @@ function WorkspaceSwitcher() {
               onClick={() => {
                 setOpen(false);
                 setLastWorkspaceId(workspace.id);
-                navigate(`/w/${workspace.id}`);
+                navigate(`/w/${workspace.id}${suffix}`);
               }}
             >
               <span className="ws-switcher-item-name">{workspace.name}</span>
@@ -230,26 +235,27 @@ function UserMenu() {
 }
 
 export function Sidebar() {
+  const exact = useMatch('/w/:workspaceId');
+  const sub = useMatch('/w/:workspaceId/*');
+  const workspaceId = exact?.params.workspaceId ?? sub?.params.workspaceId;
+  const items = workspaceId ? workspaceNav(workspaceId) : globalNav;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">Bios</div>
       <nav className="sidebar-nav" aria-label="Основная навигация">
-        {navSections.map((section) => (
-          <div key={section.title} className="sidebar-section">
-            <div className="sidebar-section-title">{section.title}</div>
-            {section.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  isActive ? 'sidebar-link active' : 'sidebar-link'
-                }
-              >
-                <item.icon size={15} aria-hidden />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
-          </div>
+        {items.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={({ isActive }) =>
+              isActive ? 'sidebar-link active' : 'sidebar-link'
+            }
+          >
+            <item.icon size={15} aria-hidden />
+            <span>{item.label}</span>
+          </NavLink>
         ))}
       </nav>
     </aside>
@@ -259,6 +265,9 @@ export function Sidebar() {
 export function Shell() {
   return (
     <div className="shell">
+      <a className="skip-link" href="#main-content">
+        К содержимому
+      </a>
       <Sidebar />
       <div className="shell-main">
         <header className="topbar">
@@ -271,7 +280,7 @@ export function Shell() {
           </div>
         </header>
         <ConnectionBanner />
-        <main className="shell-content">
+        <main className="shell-content" id="main-content">
           <Outlet />
         </main>
       </div>

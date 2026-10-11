@@ -2,6 +2,19 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
   height: 100%;
+  transition: margin-right var(--dur-pop) ease-out;
+}
+
+/* Открытая шторка (Drawer ставит data-drawer на <html>) забирает свою
+   ширину справа: контент сужается, ничего не остаётся под шторкой. */
+:root[data-drawer='open'] .shell {
+  margin-right: var(--drawer-w);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell {
+    transition: none;
+  }
 }
 
 .sidebar {
@@ -31,16 +44,22 @@
   padding: var(--space-3) var(--space-2);
 }
 
-.sidebar-section + .sidebar-section {
-  margin-top: var(--space-4);
+.skip-link {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: var(--z-pop);
+  padding: 6px var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-strong);
+  transform: translateY(-200%);
+  transition: transform var(--dur-fast);
 }
 
-.sidebar-section-title {
-  padding: 0 var(--space-2) var(--space-1);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 .sidebar-link {
@@ -194,7 +213,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 30;
+  z-index: var(--z-pop);
   min-width: 190px;
   padding: var(--space-1);
   border: 1px solid var(--border);

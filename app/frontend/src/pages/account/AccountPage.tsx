@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,6 +8,8 @@ import { useSession } from '../../auth/session';
 import { errorText } from '../../errors/errorText';
 import { getThemeMode, setThemeMode, type ThemeMode } from '../../theme/theme';
 import { Button } from '../../ui/Button';
+import { Callout } from '../../ui/Callout';
+import { PageHeader } from '../../ui/PageHeader';
 import { TextField } from '../../ui/TextField';
 import './account.css';
 
@@ -17,6 +19,12 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: 'light', label: 'Светлая' },
 ];
 
+interface PasswordErrors {
+  current?: string;
+  next?: string;
+  repeat?: string;
+}
+
 export function AccountPage() {
   const session = useSession();
   const navigate = useNavigate();
@@ -25,7 +33,9 @@ export function AccountPage() {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [repeat, setRepeat] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<PasswordErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const currentRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<ThemeMode>(() => getThemeMode());
 
   const change = useMutation({
@@ -41,32 +51,36 @@ export function AccountPage() {
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 403) {
-        setError('Неверный текущий пароль.');
-      } else {
-        setError(errorText(err, 'generic'));
+        // Ошибка адресная: подсвечиваем поле и возвращаем в него фокус.
+        setFieldErrors({ current: errorText(err, 'passwordChange') });
+        currentRef.current?.focus();
+        return;
       }
+      setFormError(errorText(err, 'passwordChange'));
     },
   });
 
   function submitPassword(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+    const found: PasswordErrors = {};
     if (password === '') {
-      setError('Введите текущий пароль.');
-      return;
+      found.current = 'Введите текущий пароль.';
     }
-    if (newPassword.length < 8 || newPassword.length > 128 || /\s/.test(newPassword)) {
-      setError('Новый пароль: 8–128 символов, без пробелов.');
-      return;
+    if (
+      newPassword.length < 8 ||
+      newPassword.length > 128 ||
+      /\s/.test(newPassword)
+    ) {
+      found.next = 'Новый пароль: 8–128 символов, без пробелов.';
+    } else if (newPassword === password) {
+      found.next = 'Новый пароль совпадает с текущим.';
     }
-    if (newPassword !== repeat) {
-      setError('Новый пароль и повтор не совпадают.');
-      return;
+    if (repeat !== newPassword) {
+      found.repeat = 'Повтор не совпадает с новым паролем.';
     }
-    if (newPassword === password) {
-      setError('Новый пароль совпадает с текущим.');
-      return;
-    }
-    setError(null);
+    setFieldErrors(found);
+    if (Object.keys(found).length > 0) return;
+    setFormError(null);
     change.mutate({ password, newPassword });
   }
 
@@ -77,32 +91,35 @@ export function AccountPage() {
 
   return (
     <div className="page">
-      <h1>Аккаунт</h1>
+      <PageHeader title="Аккаунт" />
 
       <section className="acc-section">
         <h2>Профиль</h2>
         <dl className="acc-profile">
           <dt>Имя</dt>
-          <dd className="mono">{session.user?.username}</dd>
+          <dd className="mono">{session.user?.username ?? '—'}</dd>
           <dt>Email</dt>
-          <dd className="mono">{session.user?.email}</dd>
+          <dd className="mono">{session.user?.email ?? '—'}</dd>
+          <dt>ID</dt>
+          <dd className="mono" title={session.user?.userId}>
+            {session.user?.userId ?? '—'}
+          </dd>
         </dl>
+        <p className="muted-note">Имя и email задаются при регистрации.</p>
       </section>
 
       <section className="acc-section">
         <h2>Пароль</h2>
         <form className="acc-form" onSubmit={submitPassword} noValidate>
-          {error && (
-            <div className="ws-form-error" role="alert">
-              {error}
-            </div>
-          )}
+          {formError && <Callout tone="danger">{formError}</Callout>}
           <TextField
             label="Текущий пароль"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            error={fieldErrors.current ?? null}
             autoComplete="current-password"
+            ref={currentRef}
             required
           />
           <TextField
@@ -110,6 +127,7 @@ export function AccountPage() {
             type="password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
+            error={fieldErrors.next ?? null}
             hint="8–128 символов, без пробелов"
             autoComplete="new-password"
             required
@@ -119,18 +137,25 @@ export function AccountPage() {
             type="password"
             value={repeat}
             onChange={(event) => setRepeat(event.target.value)}
+            error={fieldErrors.repeat ?? null}
             autoComplete="new-password"
             required
           />
-          <div>
+          <div className="acc-form-actions">
             <Button type="submit" variant="primary" loading={change.isPending}>
               Сменить пароль
             </Button>
           </div>
           <p className="muted-note">
-            Смена пароля завершает все активные сессии — потребуется войти заново.
+            Смена пароля завершает все активные сессии — потребуется войти
+            заново.
           </p>
         </form>
+      </section>
+
+      <section className="acc-section">
+        <h2>Сессия</h2>
+        <Button onClick={() => void logout()}>Выйти из аккаунта</Button>
       </section>
 
       <section className="acc-section">
@@ -152,11 +177,7 @@ export function AccountPage() {
             </label>
           ))}
         </div>
-      </section>
-
-      <section className="acc-section">
-        <h2>Сессия</h2>
-        <Button onClick={() => void logout()}>Выйти из аккаунта</Button>
+        <p className="muted-note">Тема хранится на этом устройстве.</p>
       </section>
     </div>
   );

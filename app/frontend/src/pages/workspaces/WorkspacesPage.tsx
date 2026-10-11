@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import type { CSSProperties, FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Layers, Plus } from 'lucide-react';
+import { ArrowUpRight, Layers, Plus } from 'lucide-react';
 import { workspacesApi } from '../../api/workspaces';
 import { setLastWorkspaceId } from '../../api/lastWorkspace';
 import type { Workspace } from '../../api/types';
@@ -13,11 +13,12 @@ import { Chip } from '../../ui/Chip';
 import { EmptyState } from '../../ui/EmptyState';
 import { ErrorState } from '../../ui/ErrorState';
 import { FullPage } from '../../ui/FullPage';
+import { LoadMore } from '../../ui/LoadMore';
 import { Modal } from '../../ui/Modal';
 import { Skeleton } from '../../ui/Skeleton';
 import { Spinner } from '../../ui/Spinner';
-import { Table } from '../../ui/Table';
 import { TextField } from '../../ui/TextField';
+import { Timestamp } from '../../ui/Timestamp';
 import { useWorkspaceList } from './workspaces.queries';
 import './workspaces.css';
 
@@ -95,7 +96,6 @@ function CreateWorkspaceModal({
 }
 
 export function WorkspacesPage() {
-  const navigate = useNavigate();
   const list = useWorkspaceList();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -164,42 +164,32 @@ export function WorkspacesPage() {
           Создать
         </Button>
       </div>
-      <Table>
-        <thead>
-          <tr>
-            <th>Название</th>
-            <th>Роль</th>
-            <th>Создано</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.workspaces.map((workspace) => (
-            <tr
-              key={workspace.id}
-              className="ws-row"
-              onClick={() => navigate(`/w/${workspace.id}`)}
-            >
-              <td className="ellipsis" title={workspace.name}>
-                {workspace.name}
-              </td>
-              <td>
+      <ul className="ws-grid stagger">
+        {list.workspaces.map((workspace, idx) => (
+          <li key={workspace.id} style={{ '--i': idx } as CSSProperties}>
+            <Link className="ws-card" to={`/w/${workspace.id}`}>
+              <div className="ws-card-top">
+                <h2 className="ws-card-name" title={workspace.name}>
+                  {workspace.name}
+                </h2>
+                <ArrowUpRight className="ws-card-arrow" size={14} aria-hidden />
+              </div>
+              <div className="ws-card-meta">
                 <RoleChip role={workspace.role} />
-              </td>
-              <td className="ws-date">{formatDate(workspace.createdAt)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-      {list.hasNextPage && (
-        <div className="ws-more">
-          <Button
-            onClick={() => void list.fetchNextPage()}
-            loading={list.isFetchingNextPage}
-          >
-            Показать ещё
-          </Button>
-        </div>
-      )}
+                <span>создано {formatDate(workspace.createdAt)}</span>
+                <span>
+                  обновлено <Timestamp iso={workspace.updatedAt} />
+                </span>
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <LoadMore
+        onClick={() => void list.fetchNextPage()}
+        loading={list.isFetchingNextPage}
+        exhausted={!list.hasNextPage}
+      />
       <CreateWorkspaceModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );

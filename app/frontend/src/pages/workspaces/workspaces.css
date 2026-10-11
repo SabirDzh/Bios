@@ -36,19 +36,83 @@
   font-size: var(--text-sm);
 }
 
-.ws-row {
-  cursor: pointer;
+/* Решение владельца: пространства — сетка карточек 3 в ряд (исключение из
+   «разделение границами, не карточками» зафиксировано в docs §2). */
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ws-date {
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.ws-more {
-  margin-top: var(--space-3);
+.ws-card {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--text);
+  transition:
+    border-color var(--dur-fast),
+    background-color var(--dur-fast),
+    transform var(--dur-fast);
+}
+
+.ws-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.ws-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.ws-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ws-card-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.ws-card-arrow {
+  flex: none;
+  color: var(--text-muted);
+  transition:
+    color var(--dur-fast),
+    transform var(--dur-fast);
+}
+
+.ws-card:hover .ws-card-arrow {
+  color: var(--accent);
+  transform: translate(1px, -1px);
+}
+
+.ws-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .ws-back {

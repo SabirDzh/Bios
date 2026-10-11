@@ -20,17 +20,27 @@
   color: var(--text-muted);
 }
 
+/* Длинные технические значения (ID, sid) переносятся целиком, а не обрезаются:
+   их диктуют в поддержку и сверяют глазами. */
 .acc-profile dd {
   margin: 0;
   color: var(--text-strong);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .acc-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.acc-form-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.acc-section > .btn {
+  margin-top: var(--space-3);
 }
 
 .acc-theme {
