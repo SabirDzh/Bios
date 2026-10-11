@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../database/prisma/prisma.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { SearchModule } from '../search/search.module';
 import { ComposeModule } from './compose/compose.module';
 import { GitModule } from './git/git.module';
 import { ServersController } from './servers.controller';
@@ -12,7 +13,7 @@ import { SSH_RUNNER } from './ssh/ssh-runner';
 import { WorkspaceRoleGuard } from '../../common/guards/workspace-role.guard';
 
 @Module({
-  imports: [PrismaModule, WorkspacesModule, ComposeModule, GitModule],
+  imports: [PrismaModule, WorkspacesModule, SearchModule, ComposeModule, GitModule],
   controllers: [ServersController],
   providers: [
     ServersService,

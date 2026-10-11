@@ -12,6 +12,8 @@ process.env.DATABASE_URL =
   'postgresql://sabir@localhost:5432/bios_test_servers?schema=public';
 process.env.NODE_ENV = 'development';
 process.env.EMAIL_VERIFY_MX = 'false';
+// Поиск: заведомо закрытый порт — e2e не зависит от локального Meilisearch.
+process.env.MEILI_HOST = 'http://127.0.0.1:9';
 process.env.THROTTLE_SSH_OPS_LIMIT = '100';
 process.env.THROTTLE_AUTH_STRICT_LIMIT = '50';
 process.env.SSH_ALLOWED_PORTS = '22,2202';
@@ -168,6 +170,7 @@ describe('servers e2e (cookies + fake ssh)', () => {
 
     ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
     ssh.respond(/docker version/, '27.3.1\n');
+    ssh.respond(/hostnamectl/, '   Operating System: Ubuntu 22.04.3 LTS\n');
     const confirmed = await request(app.getHttpServer())
       .post(`${url}/test`)
       .set('Cookie', cookies)
@@ -177,6 +180,7 @@ describe('servers e2e (cookies + fake ssh)', () => {
       reachable: true,
       status: 'ONLINE',
       dockerVersion: '27.3.1',
+      osName: 'Ubuntu 22.04.3 LTS',
     });
 
     const active = `SD=ok\nMF=present\nJSON={"version":"0.1.0","workspaceId":"${workspaceId}","serverId":"${idOf(created)}"}\nUNIT=active\nHB=1699999990\nNOW=1699999995\n`;
@@ -212,6 +216,75 @@ describe('servers e2e (cookies + fake ssh)', () => {
       hostKeyFingerprint: observed,
       lastAgentStatus: 'ACTIVE',
     });
+  });
+
+  test('test-connection (мастер): TOFU → подтверждение → ONLINE, строк в БД не создаётся', async () => {
+    const { cookies, workspaceId } = await newWorkspace(
+      'e2e-draft@example.com',
+      'e2edraft',
+    );
+    const url = `/api/v1/workspaces/${workspaceId}/servers/test-connection`;
+    const body = {
+      host: '203.0.113.30',
+      port: 22,
+      sshUsername: 'deploy',
+      authType: 'PASSWORD',
+      sshPassword: 'sup3rsecret',
+    };
+
+    ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+    const tofu = await request(app.getHttpServer())
+      .post(url)
+      .set('Cookie', cookies)
+      .send(body)
+      .expect(200);
+    expect(tofu.body).toMatchObject({
+      serverId: null,
+      reachable: false,
+      trustRequired: true,
+      hostKeyFingerprint: observed,
+      errorCode: 'HOST_KEY_NOT_TRUSTED',
+    });
+
+    ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+    ssh.respond(/docker version/, '27.3.1\n');
+    ssh.respond(/hostnamectl/, '   Operating System: Ubuntu 22.04.3 LTS\n');
+    const ok = await request(app.getHttpServer())
+      .post(url)
+      .set('Cookie', cookies)
+      .send({ ...body, trustHostKey: observed })
+      .expect(200);
+    expect(ok.body).toMatchObject({
+      serverId: null,
+      reachable: true,
+      status: 'ONLINE',
+      dockerVersion: '27.3.1',
+      osName: 'Ubuntu 22.04.3 LTS',
+      hostKeyFingerprint: observed,
+    });
+
+    // Мастер ничего не сохраняет: список пространства пуст.
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${workspaceId}/servers`)
+      .set('Cookie', cookies)
+      .expect(200);
+    expect(list.body.items).toHaveLength(0);
+    expect(ssh.commands.join('\n')).not.toContain('sup3rsecret');
+
+    // Порт вне allowlist — 400 до канала.
+    await request(app.getHttpServer())
+      .post(url)
+      .set('Cookie', cookies)
+      .send({ ...body, port: 23 })
+      .expect(400);
+
+    // create с подтверждённым отпечатком сохраняет пин сразу.
+    const created = await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspaceId}/servers`)
+      .set('Cookie', cookies)
+      .send({ name: 'e2e-pinned', ...body, hostKeyFingerprint: observed })
+      .expect(201);
+    expect(created.body.hostKeyFingerprint).toBe(observed);
   });
 
   test('install без подтверждённого host key → 424, креденшелы не отправлялись', async () => {
@@ -339,7 +412,7 @@ describe('servers e2e (cookies + fake ssh)', () => {
     });
   });
 
-  test('без куки — 401 на все шесть роутов', async () => {
+  test('без куки — 401 на все семь роутов', async () => {
     const base =
       '/api/v1/workspaces/01912345-6789-7abc-aef0-1234567890ab/servers';
     const sv = '01912345-6789-7abc-aef0-1234567890ac';
@@ -348,6 +421,10 @@ describe('servers e2e (cookies + fake ssh)', () => {
     await request(app.getHttpServer()).get(`${base}/${sv}`).expect(401);
     await request(app.getHttpServer())
       .post(`${base}/${sv}/test`)
+      .send({})
+      .expect(401);
+    await request(app.getHttpServer())
+      .post(`${base}/test-connection`)
       .send({})
       .expect(401);
     await request(app.getHttpServer())

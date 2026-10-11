@@ -10,6 +10,8 @@ process.env.DATABASE_URL =
   'postgresql://sabir@localhost:5432/bios_test_deploy?schema=public';
 process.env.NODE_ENV = 'development';
 process.env.EMAIL_VERIFY_MX = 'false';
+// Поиск: заведомо закрытый порт — e2e не зависит от локального Meilisearch.
+process.env.MEILI_HOST = 'http://127.0.0.1:9';
 process.env.THROTTLE_SSH_OPS_LIMIT = '100';
 process.env.THROTTLE_AUTH_STRICT_LIMIT = '50';
 process.env.SSH_ALLOWED_PORTS = '22,2202';

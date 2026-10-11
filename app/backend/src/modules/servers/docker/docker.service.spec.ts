@@ -172,6 +172,10 @@ describe('DockerService', () => {
       credentials,
       ssh,
       testAppConfig(),
+      {
+        syncServer: () => undefined,
+        searchServers: async () => ({ items: [], total: 0 }),
+      },
     );
     docker = new DockerService(servers, ssh, testAppConfig());
     ownerId = (

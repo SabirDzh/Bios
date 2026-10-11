@@ -90,6 +90,10 @@ describe('DeployRunnerService', () => {
       credentials,
       ssh,
       testAppConfig(),
+      {
+        syncServer: () => undefined,
+        searchServers: async () => ({ items: [], total: 0 }),
+      },
     );
     runner = new DeployRunnerService(
       prisma,

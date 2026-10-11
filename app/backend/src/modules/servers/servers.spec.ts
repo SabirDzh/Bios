@@ -6,20 +6,24 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { generateKeyPairSync } from 'node:crypto';
-import { ServerAuthType } from '@prisma/client';
+import { ServerAuthType, type Server } from '@prisma/client';
+import { FailedDependencyException } from '../../common/http/failed-dependency.exception';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { TokensService } from '../tokens/tokens.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import type { ServerSearchPort } from '../search/server-search.service';
 import type { AppConfig } from '../../config/app.config';
 import { testAppConfig } from '../../config/testing/app-config.fixture';
 import type { CreateServerDto } from './dto/create-server.dto';
+import type { TestConnectionDto } from './dto/test-connection.dto';
 import { CredentialCryptoService } from './credentials/credential-crypto.service';
 import { FakeSshRunner } from './ssh/fake-ssh.runner';
 import { SshFailure, type SshErrorCode } from './ssh/ssh-runner';
 import { MEMBER_ROLES, ServersService } from './servers.service';
 import { AgentService } from './agent.service';
+import type { SearchServersDto } from './dto/search-servers.dto';
 
 const TEST_DB_URL =
   'postgresql://sabir@localhost:5432/bios_test_servers?schema=public';
@@ -46,6 +50,26 @@ Jn3xv0Ltd2bg7dpB49IucUd46rH7UU70hm7cjwpYV0RNzlvULZ74oeQk4Q9+oImitHsvri
 -----END OPENSSH PRIVATE KEY-----
 `;
 
+/** Двойник порта поиска: пишет вызовы, чтобы их можно было утверждать. */
+class FakeServerSearch implements ServerSearchPort {
+  synced: Server[] = [];
+  calls: Array<{ workspaceId: string; q: string; limit: number }> = [];
+  result: { items: Server[]; total: number } = { items: [], total: 0 };
+
+  syncServer(server: Server): void {
+    this.synced.push(server);
+  }
+
+  async searchServers(
+    workspaceId: string,
+    q: string,
+    limit: number,
+  ): Promise<{ items: Server[]; total: number }> {
+    this.calls.push({ workspaceId, q, limit });
+    return this.result;
+  }
+}
+
 describe('servers module', () => {
   let prisma: PrismaService;
   let users: UsersService;
@@ -56,6 +80,8 @@ describe('servers module', () => {
   let ownerId: string;
   let workspaceId: string;
   let n = 0;
+
+  let search: FakeServerSearch;
 
   beforeAll(() => {
     prisma = new PrismaService();
@@ -75,12 +101,14 @@ describe('servers module', () => {
   beforeEach(async () => {
     n += 1;
     ssh = new FakeSshRunner();
+    search = new FakeServerSearch();
     servers = new ServersService(
       prisma,
       workspaces,
       credentials,
       ssh,
       testAppConfig(),
+      search,
     );
     ownerId = (
       await users.create({
@@ -420,6 +448,7 @@ describe('servers module', () => {
         credentials,
         ssh,
         testAppConfig({ allowedPorts: [2202] }),
+        search,
       );
       await expect(
         strict.loadForSsh(
@@ -449,6 +478,68 @@ describe('servers module', () => {
         ),
       ).rejects.toMatchObject({ response: { errorCode: 'TARGET_BLOCKED' } });
       expect(ssh.commands).toHaveLength(0);
+    });
+  });
+
+  describe('search', () => {
+    test('create индексирует созданный сервер fire-and-forget', async () => {
+      const created = await servers.create(ownerId, workspaceId, dtoFor());
+      expect(search.synced.map((s) => s.id)).toEqual([created.id]);
+    });
+
+    test('searchServers: q и лимит прокидываются, ответ маппится без секретов', async () => {
+      const created = await servers.create(ownerId, workspaceId, dtoFor());
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      search.result = { items: [row], total: 3 };
+
+      const res = await servers.searchServers(ownerId, workspaceId, {
+        q: 'prod 1',
+      } as SearchServersDto);
+
+      expect(search.calls).toEqual([{ workspaceId, q: 'prod 1', limit: 50 }]);
+      expect(res.total).toBe(3);
+      expect(res.items.map((s) => s.id)).toEqual([created.id]);
+      expect('secretCipher' in (res.items[0] as object)).toBe(false);
+
+      await servers.searchServers(ownerId, workspaceId, {
+        q: 'x',
+        limit: 7,
+      } as SearchServersDto);
+      expect(search.calls[1]).toEqual({ workspaceId, q: 'x', limit: 7 });
+    });
+
+    test('MEMBER может искать, посторонний — 404 до движка', async () => {
+      const memberId = await inviteAndAccept('srvsearch@example.com');
+      await expect(
+        servers.searchServers(memberId, workspaceId, {
+          q: 'x',
+        } as SearchServersDto),
+      ).resolves.toEqual({ items: [], total: 0 });
+      expect(search.calls).toHaveLength(1);
+
+      const strangerId = await extraUser(`srvsearch-stranger-${n}`);
+      await expect(
+        servers.searchServers(strangerId, workspaceId, {
+          q: 'x',
+        } as SearchServersDto),
+      ).rejects.toThrow(NotFoundException);
+      expect(search.calls).toHaveLength(1);
+    });
+
+    test('424 движка долетает без переупаковки', async () => {
+      search.searchServers = async () => {
+        throw new FailedDependencyException({
+          errorCode: 'SEARCH_UNAVAILABLE',
+          message: 'down',
+        });
+      };
+      await expect(
+        servers.searchServers(ownerId, workspaceId, {
+          q: 'x',
+        } as SearchServersDto),
+      ).rejects.toBeInstanceOf(FailedDependencyException);
     });
   });
 
@@ -526,10 +617,11 @@ describe('servers module', () => {
       expect(row.hostKeyFingerprint).toBeNull();
     });
 
-    test('подтверждение с совпадающим отпечатком: пин пишется, дальше ONLINE', async () => {
+    test('подтверждение с совпадающим отпечатком: пин пишется, дальше ONLINE + ОС хоста', async () => {
       const created = await servers.create(ownerId, workspaceId, dtoFor());
       notTrusted(/.*/);
       ssh.respond(/docker version/, '27.3.1\n');
+      ssh.respond(/hostnamectl/, '   Operating System: Ubuntu 22.04.3 LTS\n');
 
       const result = await servers.testConnection(
         ownerId,
@@ -542,13 +634,82 @@ describe('servers module', () => {
         status: 'ONLINE',
         dockerVersion: '27.3.1',
         trustRequired: false,
+        osName: 'Ubuntu 22.04.3 LTS',
       });
       const row = await prisma.server.findUniqueOrThrow({
         where: { id: created.id },
       });
       expect(row.hostKeyFingerprint).toBe(observed);
+      expect(row.osName).toBe('Ubuntu 22.04.3 LTS');
+      // Порядок осей: probe, затем Docker, затем ОС — одним каналом сессии.
+      expect(ssh.commands[0]).toBe('true');
+      expect(ssh.commands[1]).toMatch(/docker version/);
+      expect(ssh.commands[2]).toMatch(/hostnamectl/);
       expect(ssh.sessions[0].expectedHostKeyFingerprint).toBeNull();
       expect(ssh.sessions[1].expectedHostKeyFingerprint).toBe(observed);
+      expect((await servers.findAll(ownerId, workspaceId, {})).items[0]).toMatchObject({
+        osName: 'Ubuntu 22.04.3 LTS',
+      });
+    });
+
+    test('docker нет, но ОС опознана: ONLINE + dockerErrorCode, хост опознан через uname', async () => {
+      const created = await servers.create(ownerId, workspaceId, dtoFor());
+      await pin(created.id);
+      ssh.respond(/docker version/, '', {
+        code: 127,
+        stderr: 'bash: docker: command not found',
+      });
+      // hostnamectl молчит (нет systemd) — остаётся только строка uname -a.
+      ssh.respond(
+        /hostnamectl/,
+        'Linux old-host 3.10.0-1160.el7.x86_64 #1 SMP Mon Oct 19 16:18:59 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux\n',
+      );
+      const result = await servers.testConnection(
+        ownerId,
+        workspaceId,
+        created.id,
+        {},
+      );
+      expect(result).toMatchObject({
+        reachable: true,
+        status: 'ONLINE',
+        dockerVersion: null,
+        dockerErrorCode: 'DOCKER_MISSING',
+        osName: 'Linux 3.10.0-1160.el7.x86_64 (x86_64)',
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(row.osName).toBe('Linux 3.10.0-1160.el7.x86_64 (x86_64)');
+    });
+
+    test('сбой пробы ОС: вердикт о хосте прежний, ранее записанное имя не стирается', async () => {
+      const created = await servers.create(ownerId, workspaceId, dtoFor());
+      await pin(created.id);
+      const before = 'Debian GNU/Linux 11 (bullseye)';
+      await prisma.server.update({
+        where: { id: created.id },
+        data: { osName: before },
+      });
+      ssh.respond(/docker version/, '27.3.1');
+      ssh.fail(/hostnamectl/, new Error('channel closed'));
+
+      const result = await servers.testConnection(
+        ownerId,
+        workspaceId,
+        created.id,
+        {},
+      );
+      expect(result).toMatchObject({
+        reachable: true,
+        status: 'ONLINE',
+        dockerVersion: '27.3.1',
+        osName: before,
+      });
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(row.osName).toBe(before);
     });
 
     test('подтверждение с НЕСОВПАДАЮЩИМ отпечатком → 409, пин не записан', async () => {
@@ -676,6 +837,7 @@ describe('servers module', () => {
         );
         await pin(created.id, fingerprintFor(letter));
         ssh.respond(/docker version/, '', { code, stderr });
+        ssh.respond(/hostnamectl/, 'Operating System: Ubuntu 20.04.6 LTS\n');
         const result = await servers.testConnection(
           ownerId,
           workspaceId,
@@ -699,6 +861,7 @@ describe('servers module', () => {
       const created = await servers.create(ownerId, workspaceId, dtoFor());
       await pin(created.id);
       ssh.respond(/docker version/, 'Docker version 27.3.1, build ce12230\n');
+      ssh.respond(/hostnamectl/, 'Operating System: Ubuntu 20.04.6 LTS\n');
       const result = await servers.testConnection(
         ownerId,
         workspaceId,
@@ -716,6 +879,7 @@ describe('servers module', () => {
       const created = await servers.create(ownerId, workspaceId, dtoFor());
       await pin(created.id);
       ssh.respond(/docker version/, '27.3.1');
+      ssh.respond(/hostnamectl/, 'Operating System: Ubuntu 20.04.6 LTS\n');
       const original = prisma.server.update.bind(prisma.server);
       // Ноль параметров — валидная замена: JS-функция с меньшим числом аргументов
       // присваивается любому call-signature, и `_args` не плодит неиспользуемую переменную.
@@ -748,6 +912,134 @@ describe('servers module', () => {
       await expect(
         servers.testConnection(memberId, workspaceId, created.id, {}),
       ).resolves.toMatchObject({ trustRequired: true });
+    });
+  });
+
+  describe('test-connection (draft, без записи)', () => {
+    const observed = `SHA256:${'F'.repeat(43)}`;
+
+    function draftDto(
+      overrides: Partial<TestConnectionDto> = {},
+    ): TestConnectionDto {
+      return {
+        host: '203.0.113.20',
+        port: 22,
+        sshUsername: 'deploy',
+        authType: ServerAuthType.PASSWORD,
+        sshPassword: 'sup3rsecret',
+        ...overrides,
+      };
+    }
+
+    test('TOFU первый шаг: отпечаток предложен, в БД ничего не создано', async () => {
+      ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+      const result = await servers.testConnectionDraft(
+        ownerId,
+        workspaceId,
+        draftDto(),
+      );
+      expect(result).toMatchObject({
+        serverId: null,
+        reachable: false,
+        trustRequired: true,
+        hostKeyFingerprint: observed,
+        errorCode: 'HOST_KEY_NOT_TRUSTED',
+        status: 'PENDING',
+      });
+      expect(await prisma.server.count()).toBe(0);
+      expect(ssh.sessions[0].expectedHostKeyFingerprint).toBeNull();
+      ssh.assertNoSecretLeak('sup3rsecret');
+    });
+
+    test('подтверждённый отпечаток: ONLINE + Docker + ОС, в БД по-прежнему пусто', async () => {
+      ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+      ssh.respond(/docker version/, '27.3.1\n');
+      ssh.respond(/hostnamectl/, '   Operating System: Ubuntu 22.04.3 LTS\n');
+      const result = await servers.testConnectionDraft(
+        ownerId,
+        workspaceId,
+        draftDto({ trustHostKey: observed }),
+      );
+      expect(result).toMatchObject({
+        serverId: null,
+        reachable: true,
+        trustRequired: false,
+        status: 'ONLINE',
+        dockerVersion: '27.3.1',
+        osName: 'Ubuntu 22.04.3 LTS',
+        hostKeyFingerprint: observed,
+        errorCode: null,
+      });
+      expect(await prisma.server.count()).toBe(0);
+      expect(ssh.sessions.at(-1)?.expectedHostKeyFingerprint).toBe(observed);
+    });
+
+    test('несовпадающий отпечаток в подтверждении → 409, ничего не записано', async () => {
+      ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+      await expect(
+        servers.testConnectionDraft(
+          ownerId,
+          workspaceId,
+          draftDto({ trustHostKey: `SHA256:${'G'.repeat(43)}` }),
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(await prisma.server.count()).toBe(0);
+    });
+
+    test('аутентификационный сбой → 200 reachable:false + AUTH_FAILED, без строки', async () => {
+      ssh.hostKey(/.*/, observed, 'HOST_KEY_NOT_TRUSTED');
+      ssh.fail(/docker version/, new SshFailure('AUTH_FAILED', 'auth failed'));
+      const result = await servers.testConnectionDraft(
+        ownerId,
+        workspaceId,
+        draftDto({ trustHostKey: observed }),
+      );
+      expect(result).toMatchObject({
+        serverId: null,
+        reachable: false,
+        status: 'OFFLINE',
+        errorCode: 'AUTH_FAILED',
+      });
+      expect(await prisma.server.count()).toBe(0);
+    });
+
+    test('запрещённый порт → 400, MEMBER → 403, канал не тронут', async () => {
+      await expect(
+        servers.testConnectionDraft(
+          ownerId,
+          workspaceId,
+          draftDto({ port: 2222 }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+      const memberId = await inviteAndAccept(`memberdraft${n}@example.com`);
+      await expect(
+        servers.testConnectionDraft(memberId, workspaceId, draftDto()),
+      ).rejects.toThrow(ForbiddenException);
+      expect(ssh.commands).toHaveLength(0);
+    });
+
+    test('адрес из метаданных облака блокируется политикой до обращения к каналу', async () => {
+      await expect(
+        servers.testConnectionDraft(
+          ownerId,
+          workspaceId,
+          draftDto({ host: '169.254.169.254' }),
+        ),
+      ).rejects.toMatchObject({ response: { errorCode: 'TARGET_BLOCKED' } });
+      expect(ssh.commands).toHaveLength(0);
+    });
+
+    test('create сохраняет подтверждённый в мастере отпечаток', async () => {
+      const created = await servers.create(
+        ownerId,
+        workspaceId,
+        dtoFor({ name: 'pinned-draft', hostKeyFingerprint: observed }),
+      );
+      expect(created.hostKeyFingerprint).toBe(observed);
+      const row = await prisma.server.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(row.hostKeyFingerprint).toBe(observed);
     });
   });
 

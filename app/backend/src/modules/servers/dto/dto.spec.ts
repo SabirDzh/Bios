@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateServerDto } from './create-server.dto';
+import { SearchServersDto } from './search-servers.dto';
 import { ServerIdsDto } from './server-ids.dto';
 import { TestServerDto } from './test-server.dto';
 
@@ -217,5 +218,33 @@ describe('server DTOs: other fields', () => {
       await errorsOf(TestServerDto, { trustHostKey: 'SHA256:short' }),
     ).not.toEqual([]);
     expect(await errorsOf(TestServerDto, { trustHostKey: 42 })).not.toEqual([]);
+  });
+});
+
+describe('server DTOs: search', () => {
+  test('q тримится; пустой после trim, отсутствующий и длинный — 400', async () => {
+    expect(plainToInstance(SearchServersDto, { q: '  prod  ' }).q).toBe('prod');
+    expect(await errorsOf(SearchServersDto, { q: '   ' })).not.toEqual([]);
+    expect(await errorsOf(SearchServersDto, { q: 'x'.repeat(65) })).not.toEqual(
+      [],
+    );
+    expect(await errorsOf(SearchServersDto, {})).not.toEqual([]);
+  });
+
+  test('limit: целое 1..100, строка из query приводится к числу', async () => {
+    expect(await errorsOf(SearchServersDto, { q: 'x', limit: 1 })).toEqual([]);
+    expect(await errorsOf(SearchServersDto, { q: 'x', limit: 100 })).toEqual(
+      [],
+    );
+    expect(
+      await errorsOf(SearchServersDto, { q: 'x', limit: 0 }),
+    ).not.toEqual([]);
+    expect(
+      await errorsOf(SearchServersDto, { q: 'x', limit: 101 }),
+    ).not.toEqual([]);
+    expect(plainToInstance(SearchServersDto, { q: 'x' }).limit).toBeUndefined();
+    expect(plainToInstance(SearchServersDto, { q: 'x', limit: '20' }).limit).toBe(
+      20,
+    );
   });
 });

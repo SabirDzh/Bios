@@ -133,6 +133,9 @@ model Server {
   /// Только доступность SSH-хоста; про Docker и агента — lastAgentStatus/lastAgentErrorCode.
   status           ServerStatus        @default(PENDING)
   dockerVersion    String?
+  /// Строка ОС с хоста (hostnamectl, фолбэк — uname -a). NULL = ещё не опрошена;
+  /// сбой пробы не стирает ранее записанное значение.
+  osName           String?
   agentVersion     String?
   agentInstalledAt DateTime?           @db.Timestamptz(3)
   lastAgentStatus  AgentReportStatus?
