@@ -9,6 +9,11 @@
   --radius-sm: 6px;
   --radius-md: 8px;
 
+  /* Длительности motion-системы (stagger/hover): нужны закоммиченным
+     transitions в base.css и TextField.css. */
+  --dur-fast: 120ms;
+  --dur-pop: 160ms;
+
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
