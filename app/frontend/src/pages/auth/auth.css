@@ -6,6 +6,7 @@
   gap: var(--space-5);
   min-height: 100%;
   padding: var(--space-5);
+  background: #000;
 }
 
 .auth-title {
@@ -22,22 +23,42 @@
   max-width: 100%;
 }
 
+.auth-social {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.auth-social-btn {
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 16px;
+  font-size: 16px;
+  color: #ededed;
+}
+
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
 .auth-brand {
   color: var(--text-strong);
-  font-family: var(--font-display);
   font-size: 28px;
   font-weight: 700;
   letter-spacing: 0.28em;
   text-transform: uppercase;
   text-indent: 0.28em;
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  width: 420px;
-  max-width: 100%;
 }
 
 /* Крупнее controls только внутри auth: остальным страницам компактность. */
@@ -49,16 +70,35 @@
 .auth-form .field-input {
   height: 56px;
   padding: 0 20px;
-  border-radius: 24px;
-  font-size: 24px;
+  border-radius: 16px;
+  background: #000;
+  font-size: 16px;
+  font-weight: 400;
+  font-stretch: 100%;
+  line-height: 24px;
 }
 
 .auth-form .field-input::placeholder {
-  font-size: 24px;
+  color: #afafaf;
+  font-size: 16px;
+  line-height: 24px;
+  opacity: 1;
 }
 
 .auth-form .field-control.has-trailing .field-input {
   padding-right: 52px;
+}
+
+.auth-form .field-error {
+  font-size: 13px;
+}
+
+.auth-form .field-input:focus-visible {
+  padding: 0 19px;
+}
+
+.auth-form .field-control.has-trailing .field-input:focus-visible {
+  padding-right: 51px;
 }
 
 .auth-error {
@@ -83,17 +123,25 @@
   justify-content: center;
   height: 56px;
   min-height: 56px;
-  margin-top: var(--space-2);
-  border-radius: 24px;
-  font-size: 24px;
-  font-weight: 700;
-  transition-duration: 200ms;
+  margin-top: 4px;
+  border-radius: 16px;
+  border-color: #ededed;
+  background: #ededed;
+  font-size: 16px;
+  font-weight: 500;
+  font-stretch: 100%;
+  line-height: 24px;
+  transition:
+    background-color 250ms ease,
+    border-color 250ms ease,
+    filter 250ms ease;
 }
 
 .auth-submit:hover:not(:disabled) {
   transform: none;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #ededed;
+  border-color: #ededed;
+  filter: brightness(0.85);
 }
 
 .auth-submit:active:not(:disabled) {
@@ -101,8 +149,12 @@
 }
 
 .auth-footer {
-  margin-top: var(--space-5);
-  color: var(--text-muted);
-  font-size: var(--text-base);
+  margin-top: var(--space-3);
+  color: #afafaf;
+  font-size: 18px;
   text-align: center;
+}
+
+.auth-footer a {
+  font-weight: 700;
 }

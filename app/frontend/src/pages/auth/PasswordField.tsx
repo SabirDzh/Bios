@@ -10,6 +10,7 @@ interface PasswordFieldProps {
   required?: boolean;
   /** Accessible name: без видимого лейбла обязателен. */
   ariaLabel: string;
+  error?: string | null;
 }
 
 export function PasswordField({
@@ -19,6 +20,7 @@ export function PasswordField({
   autoComplete,
   required,
   ariaLabel,
+  error,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   return (
@@ -30,6 +32,7 @@ export function PasswordField({
       aria-label={ariaLabel}
       autoComplete={autoComplete}
       required={required}
+      error={error}
       trailing={
         <button
           type="button"

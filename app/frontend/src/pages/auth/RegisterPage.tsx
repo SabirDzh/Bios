@@ -11,6 +11,7 @@ import { FullPage } from '../../ui/FullPage';
 import { Spinner } from '../../ui/Spinner';
 import { TextField } from '../../ui/TextField';
 import { AuthLayout } from './AuthLayout';
+import { AuthSocial } from './AuthSocial';
 import { PasswordField } from './PasswordField';
 
 interface AuthNavState {
@@ -18,19 +19,6 @@ interface AuthNavState {
 }
 
 const USERNAME_RE = /^[a-z0-9._-]{3,64}$/;
-
-function validate(username: string, email: string, password: string): string | null {
-  if (!USERNAME_RE.test(username)) {
-    return 'Имя: 3–64 символа — латиница, цифры, точка, дефис, подчёркивание.';
-  }
-  if (email.length < 6 || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) {
-    return 'Укажите корректный email.';
-  }
-  if (password.length < 8 || password.length > 128 || /\s/.test(password)) {
-    return 'Пароль: 8–128 символов, без пробелов.';
-  }
-  return null;
-}
 
 export function RegisterPage() {
   const session = useSession();
@@ -42,6 +30,11 @@ export function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    username?: string;
+    email?: string;
+    password?: string;
+  }>({});
   const [busy, setBusy] = useState(false);
 
   if (session.sessionError) {
@@ -71,11 +64,26 @@ export function RegisterPage() {
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
-    const validationError = validate(username, normalizedEmail, password);
-    if (validationError) {
-      setError(validationError);
-      return;
+    const next: { username?: string; email?: string; password?: string } = {};
+    if (!USERNAME_RE.test(username)) {
+      next.username = 'Введите имя пользователя';
     }
+    if (
+      normalizedEmail.length < 6 ||
+      normalizedEmail.length > 254 ||
+      !/^\S+@\S+\.\S+$/.test(normalizedEmail)
+    ) {
+      next.email = 'Введите email';
+    }
+    if (
+      password.length < 8 ||
+      password.length > 128 ||
+      /\s/.test(password)
+    ) {
+      next.password = 'Введите пароль';
+    }
+    setFieldErrors(next);
+    if (Object.keys(next).length > 0) return;
     setError(null);
     setBusy(true);
     try {
@@ -111,6 +119,7 @@ export function RegisterPage() {
       }
     >
       <form className="auth-form" onSubmit={(event) => void submit(event)} noValidate>
+        <AuthSocial />
         {error && (
           <div className="auth-error" role="alert">
             {error}
@@ -118,29 +127,41 @@ export function RegisterPage() {
         )}
         <TextField
           value={username}
-          onChange={(event) => setUsername(event.target.value.toLowerCase())}
+          onChange={(event) => {
+            setUsername(event.target.value.toLowerCase());
+            setFieldErrors((prev) => ({ ...prev, username: undefined }));
+          }}
           placeholder="Имя пользователя"
           aria-label="Имя пользователя"
           autoComplete="username"
           autoFocus
           required
+          error={fieldErrors.username}
         />
         <TextField
           type="email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            setFieldErrors((prev) => ({ ...prev, email: undefined }));
+          }}
           placeholder="Адрес электронной почты"
           aria-label="Email"
           autoComplete="email"
           required
+          error={fieldErrors.email}
         />
         <PasswordField
           value={password}
-          onChange={setPassword}
+          onChange={(value) => {
+            setPassword(value);
+            setFieldErrors((prev) => ({ ...prev, password: undefined }));
+          }}
           placeholder="Пароль"
           ariaLabel="Пароль"
           autoComplete="new-password"
           required
+          error={fieldErrors.password}
         />
         <Button
           type="submit"
@@ -148,7 +169,7 @@ export function RegisterPage() {
           className="auth-submit"
           loading={busy}
         >
-          Создать аккаунт
+          Продолжить
         </Button>
       </form>
     </AuthLayout>

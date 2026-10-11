@@ -9,6 +9,7 @@ import { FullPage } from '../../ui/FullPage';
 import { Spinner } from '../../ui/Spinner';
 import { TextField } from '../../ui/TextField';
 import { AuthLayout } from './AuthLayout';
+import { AuthSocial } from './AuthSocial';
 import { PasswordField } from './PasswordField';
 
 interface AuthNavState {
@@ -26,6 +27,8 @@ export function LoginPage() {
   const [email, setEmail] = useState(state.registered ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (session.sessionError) {
@@ -54,10 +57,11 @@ export function LoginPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!email.trim() || !password) {
-      setError('Заполните email и пароль.');
-      return;
-    }
+    const nextEmailError = !email.trim() ? 'Введите email' : null;
+    const nextPasswordError = !password ? 'Введите пароль' : null;
+    setEmailError(nextEmailError);
+    setPasswordError(nextPasswordError);
+    if (nextEmailError || nextPasswordError) return;
     setError(null);
     setBusy(true);
     try {
@@ -80,6 +84,7 @@ export function LoginPage() {
       }
     >
       <form className="auth-form" onSubmit={(event) => void submit(event)} noValidate>
+        <AuthSocial />
         {(state.notice || state.registered) && !error && (
           <div className="auth-notice">
             {state.notice ?? 'Аккаунт создан. Войдите с указанным email.'}
@@ -93,20 +98,28 @@ export function LoginPage() {
         <TextField
           type="email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            setEmailError(null);
+          }}
           placeholder="Адрес электронной почты"
           aria-label="Email"
           autoComplete="email"
           autoFocus
           required
+          error={emailError}
         />
         <PasswordField
           value={password}
-          onChange={setPassword}
+          onChange={(value) => {
+            setPassword(value);
+            setPasswordError(null);
+          }}
           placeholder="Пароль"
           ariaLabel="Пароль"
           autoComplete="current-password"
           required
+          error={passwordError}
         />
         <Button
           type="submit"
@@ -114,7 +127,7 @@ export function LoginPage() {
           className="auth-submit"
           loading={busy}
         >
-          Войти
+          Продолжить
         </Button>
       </form>
     </AuthLayout>
