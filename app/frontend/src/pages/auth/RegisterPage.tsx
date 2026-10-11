@@ -11,6 +11,7 @@ import { FullPage } from '../../ui/FullPage';
 import { Spinner } from '../../ui/Spinner';
 import { TextField } from '../../ui/TextField';
 import { AuthLayout } from './AuthLayout';
+import { PasswordField } from './PasswordField';
 
 interface AuthNavState {
   returnTo?: string;
@@ -116,28 +117,28 @@ export function RegisterPage() {
           </div>
         )}
         <TextField
-          label="Имя"
           value={username}
           onChange={(event) => setUsername(event.target.value.toLowerCase())}
-          hint="3–64 символа: латиница, цифры, . _ -"
+          placeholder="Имя пользователя"
+          aria-label="Имя пользователя"
           autoComplete="username"
           autoFocus
           required
         />
         <TextField
-          label="Email"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          placeholder="Адрес электронной почты"
+          aria-label="Email"
           autoComplete="email"
           required
         />
-        <TextField
-          label="Пароль"
-          type="password"
+        <PasswordField
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          hint="8–128 символов, без пробелов"
+          onChange={setPassword}
+          placeholder="Пароль"
+          ariaLabel="Пароль"
           autoComplete="new-password"
           required
         />

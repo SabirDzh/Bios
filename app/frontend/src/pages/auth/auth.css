@@ -1,37 +1,64 @@
 .auth-page {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-5);
   min-height: 100%;
   padding: var(--space-5);
 }
 
-.auth-card {
-  width: 360px;
-  max-width: 100%;
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-}
-
-.auth-brand {
-  color: var(--text-strong);
-  font-size: var(--text-base);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
 .auth-title {
-  margin: var(--space-3) 0 var(--space-4);
-  font-size: var(--text-lg);
+  margin: 0;
+  font-size: 22px;
+  text-align: center;
 }
 
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  width: 420px;
+  max-width: 100%;
+}
+
+.auth-brand {
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-indent: 0.28em;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 420px;
+  max-width: 100%;
+}
+
+/* Крупнее controls только внутри auth: остальным страницам компактность. */
+.auth-form .field-label {
+  font-size: var(--text-md);
+  font-weight: 500;
+}
+
+.auth-form .field-input {
+  height: 56px;
+  padding: 0 20px;
+  border-radius: 24px;
+  font-size: 24px;
+}
+
+.auth-form .field-input::placeholder {
+  font-size: 24px;
+}
+
+.auth-form .field-control.has-trailing .field-input {
+  padding-right: 52px;
 }
 
 .auth-error {
@@ -54,14 +81,28 @@
 
 .auth-submit {
   justify-content: center;
-  margin-top: var(--space-1);
+  height: 56px;
+  min-height: 56px;
+  margin-top: var(--space-2);
+  border-radius: 24px;
+  font-size: 24px;
+  font-weight: 700;
+  transition-duration: 200ms;
+}
+
+.auth-submit:hover:not(:disabled) {
+  transform: none;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.auth-submit:active:not(:disabled) {
+  transform: none;
 }
 
 .auth-footer {
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
+  margin-top: var(--space-5);
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   text-align: center;
 }

@@ -10,12 +10,10 @@ interface AuthLayoutProps {
 export function AuthLayout({ title, children, footer }: AuthLayoutProps) {
   return (
     <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-brand">Bios</div>
-        <h1 className="auth-title">{title}</h1>
-        {children}
-        {footer && <div className="auth-footer">{footer}</div>}
-      </div>
+      <div className="auth-brand">Bios</div>
+      <h1 className="auth-title">{title}</h1>
+      {children}
+      {footer && <div className="auth-footer">{footer}</div>}
     </div>
   );
 }

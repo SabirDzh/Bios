@@ -9,6 +9,7 @@ import { FullPage } from '../../ui/FullPage';
 import { Spinner } from '../../ui/Spinner';
 import { TextField } from '../../ui/TextField';
 import { AuthLayout } from './AuthLayout';
+import { PasswordField } from './PasswordField';
 
 interface AuthNavState {
   returnTo?: string;
@@ -90,19 +91,20 @@ export function LoginPage() {
           </div>
         )}
         <TextField
-          label="Email"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          placeholder="Адрес электронной почты"
+          aria-label="Email"
           autoComplete="email"
           autoFocus
           required
         />
-        <TextField
-          label="Пароль"
-          type="password"
+        <PasswordField
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={setPassword}
+          placeholder="Пароль"
+          ariaLabel="Пароль"
           autoComplete="current-password"
           required
         />
