@@ -50,6 +50,15 @@ export interface DeployCfg {
   maxParallel: number;
 }
 
+export interface MeiliCfg {
+  /** Базовый origin движка без пути (напр. http://127.0.0.1:7700). */
+  host: string;
+  /** Мастер-ключ; null — движок без авторизации (только dev-контур). */
+  masterKey: string | null;
+  /** Дедлайн одного HTTP-вызова к движку поиска. */
+  timeoutMs: number;
+}
+
 export interface CryptoCfg {
   activeKey: { id: string; key: Buffer };
   /** Decrypt-only: старые kid переживают ротацию, новым ключом они не шифруются. */
@@ -78,6 +87,7 @@ export interface AppConfig {
   ssh: SshCfg;
   docker: DockerCfg;
   deploy: DeployCfg;
+  meili: MeiliCfg;
   crypto: CryptoCfg;
   jwt: AuthConfig;
   cookies: {
@@ -360,6 +370,56 @@ function parseAbsoluteDir(raw: string | undefined): string {
   return value;
 }
 
+/**
+ * Origin движка поиска: только схема+хост+порт. Путь, креденшелы и query —
+ * признак опечатки в env, а не молчаливое «умолчание»: режем с ошибкой.
+ */
+function parseMeiliHost(raw: string | undefined): string {
+  const value = (raw ?? 'http://127.0.0.1:7700').trim();
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid MEILI_HOST="${raw}": expected http(s) URL`);
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    url.pathname !== '/'
+  ) {
+    throw new Error(
+      `Invalid MEILI_HOST="${raw}": expected bare origin (http(s)://host:port) without path`,
+    );
+  }
+  return url.origin;
+}
+
+/**
+ * Мастер-ключ поиска: в production обязателен (индекс хранит имена и адреса
+ * инфраструктуры), в dev допускается открытый локальный движок.
+ */
+function parseMeiliKey(
+  raw: string | undefined,
+  isProduction: boolean,
+): string | null {
+  const value = raw?.trim() ?? '';
+  if (value === '') {
+    if (isProduction) {
+      throw new Error('Missing required MEILI_MASTER_KEY in production');
+    }
+    return null;
+  }
+  if (value.length < 16) {
+    throw new Error(
+      `Invalid MEILI_MASTER_KEY: Meilisearch requires at least 16 bytes`,
+    );
+  }
+  return value;
+}
+
 function parseBoolFlag(
   raw: string | undefined,
   name: string,
@@ -577,6 +637,17 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     docker,
     deploy,
     crypto: parseCrypto(env, isProduction),
+    // порядок литерала: crypto раньше meili — prod-падение называет первым
+    // ключ шифрования (тесты и сообщения опираются на это)
+    meili: {
+      host: parseMeiliHost(env.MEILI_HOST),
+      masterKey: parseMeiliKey(env.MEILI_MASTER_KEY, isProduction),
+      timeoutMs: positiveInt(env.MEILI_TIMEOUT_MS, 'MEILI_TIMEOUT_MS', {
+        min: 100,
+        max: 30000,
+        fallback: 3000,
+      }),
+    },
     jwt,
     cookies: {
       accessName: env.COOKIE_ACCESS_NAME || 'access_token',

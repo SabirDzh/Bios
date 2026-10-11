@@ -41,6 +41,11 @@ export function testAppConfig(
       maxParallel: 1,
       ...deployOverrides,
     },
+    meili: {
+      host: 'http://127.0.0.1:7700',
+      masterKey: null,
+      timeoutMs: 3000,
+    },
     crypto: {
       activeKey: { id: 'k1', key: Buffer.alloc(32, 7) },
       oldKeys: new Map([['k0', Buffer.alloc(32, 6)]]),

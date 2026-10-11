@@ -16,11 +16,28 @@ services:
       timeout: 3s
       retries: 10
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.3
+    restart: unless-stopped
+    environment:
+      # Ключ обязателен: индекс хранит имена и адреса инфраструктуры.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY env}
+      MEILI_ENV: production
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:7700/health']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./app/backend
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      meilisearch:
         condition: service_healthy
     ports:
       - '${PORT:-3000}:3000'
@@ -40,6 +57,8 @@ services:
       SSH_ALLOW_LOOPBACK: ${SSH_ALLOW_LOOPBACK:-false}
       AGENT_VERSION: ${AGENT_VERSION:-0.1.0}
       THROTTLE_SSH_OPS_LIMIT: ${THROTTLE_SSH_OPS_LIMIT:-6}
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY env}
     secrets:
       - jwt_private_key
       - jwt_public_key
@@ -59,3 +78,4 @@ secrets:
 
 volumes:
   pgdata:
+  meili_data:

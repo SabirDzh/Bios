@@ -57,6 +57,11 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(cfg.app.compressionThreshold).toBe(1024);
     expect(cfg.logging.sampleEvery).toBe(100);
     expect(cfg.logging.slowMs).toBe(500);
+    expect(cfg.meili).toEqual({
+      host: 'http://127.0.0.1:7700',
+      masterKey: null,
+      timeoutMs: 3000,
+    });
   });
 
   test('invalid values throw with the variable name', () => {
@@ -84,6 +89,9 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
       ['MAINTENANCE_TIMEZONE', 'Mars/Olympus'],
       ['MAINTENANCE_STALE_DAYS', '0'],
       ['COOKIE_SAMESITE', 'banana'],
+      ['MEILI_HOST', 'not a url'],
+      ['MEILI_MASTER_KEY', 'short'],
+      ['MEILI_TIMEOUT_MS', '50'],
     ];
     for (const [name, value] of bad) {
       expect(() => loadAppConfig(withKeys({ [name]: value }))).toThrow(name);
@@ -102,9 +110,11 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
         NODE_ENV: 'production',
         CORS_ORIGINS: 'https://app.example.com',
         SERVER_CRYPTO_KEY: Buffer.alloc(32, 7).toString('base64'),
+        MEILI_MASTER_KEY: 'prod-master-key-0123456789',
       }),
     );
     expect(prod.app.isProduction).toBe(true);
+    expect(prod.meili.masterKey).toBe('prod-master-key-0123456789');
     expect(prod.cookies.secure).toBe(true);
     expect(prod.cors.origins).toEqual(['https://app.example.com']);
     expect(prod.jwt.ephemeralKeys).toBe(false);
@@ -132,6 +142,43 @@ describe('loadAppConfig defaults (must match current hardcoded behavior)', () =>
     expect(
       loadAppConfig(withKeys({ TRUST_PROXY: 'false' })).app.trustProxy,
     ).toBe(false);
+  });
+
+  test('meili: host — только bare origin, ключ — длинный, в production обязателен', () => {
+    const cfg = loadAppConfig(
+      withKeys({
+        MEILI_HOST: 'http://meili:7700/',
+        MEILI_MASTER_KEY: 'dev-master-key-0123456789',
+        MEILI_TIMEOUT_MS: '1500',
+      }),
+    );
+    expect(cfg.meili).toEqual({
+      host: 'http://meili:7700',
+      masterKey: 'dev-master-key-0123456789',
+      timeoutMs: 1500,
+    });
+
+    for (const bad of [
+      'http://x:7700/health',
+      'http://x:7700/api',
+      'http://user:pass@x:7700',
+      'http://x:7700?k=1',
+      'ftp://x:7700',
+    ]) {
+      expect(() => loadAppConfig(withKeys({ MEILI_HOST: bad }))).toThrow(
+        /MEILI_HOST/,
+      );
+    }
+
+    expect(() =>
+      loadAppConfig(
+        withKeys({
+          NODE_ENV: 'production',
+          CORS_ORIGINS: 'https://app.example.com',
+          SERVER_CRYPTO_KEY: Buffer.alloc(32, 7).toString('base64'),
+        }),
+      ),
+    ).toThrow(/MEILI_MASTER_KEY/);
   });
 
   test('env overrides apply', () => {
