@@ -7,6 +7,7 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import disposableDomains from 'disposable-email-domains';
+import { LruCache } from '../cache/lru-cache';
 import { getAppConfig } from '../../config/app-config.module';
 
 // 121k+ доменов из поддерживаемого репозитория
@@ -75,14 +76,15 @@ export async function hasMxRecords(domain: string): Promise<boolean> {
 
 // Кэш MX-ответов: записи меняются редко, а каждый miss держит регистрацию
 // до таймаута. Positive TTL длинный, negative короткий (свежий домен может
-// получить MX). In-flight дедуп: пачка регистраций с одного корпоративного
+// получить MX). Вытеснение — LRU: горячие корпоративные домены не вымываются
+// редкими. In-flight дедуп: пачка регистраций с одного корпоративного
 // домена даёт один DNS-запрос. Мульти-инстанс не проблема: под кэшем всё
 // равно системный DNS-кэш, расхождение — в пределах TTL.
 const MX_POSITIVE_TTL_MS = 24 * 3600 * 1000;
 const MX_NEGATIVE_TTL_MS = 10 * 60 * 1000;
 const MX_CACHE_MAX = 5000;
 
-const mxCache = new Map<string, { ok: boolean; at: number }>();
+const mxCache = new LruCache<boolean>(MX_CACHE_MAX);
 const mxPending = new Map<string, Promise<boolean>>();
 
 /** Крупные провайдеры: MX заведомо есть, DNS-запрос не нужен вообще. */
@@ -110,12 +112,12 @@ const MX_ALLOWLIST = new Set([
 export async function hasMxRecordsCached(domain: string): Promise<boolean> {
   const key = domain.toLowerCase();
   if (MX_ALLOWLIST.has(key)) return true;
-  const hit = mxCache.get(key);
+  const hit = mxCache.getEntry(key);
   if (
     hit &&
-    Date.now() - hit.at < (hit.ok ? MX_POSITIVE_TTL_MS : MX_NEGATIVE_TTL_MS)
+    Date.now() - hit.at < (hit.value ? MX_POSITIVE_TTL_MS : MX_NEGATIVE_TTL_MS)
   ) {
-    return hit.ok;
+    return hit.value;
   }
   const inflight = mxPending.get(key);
   if (inflight) return inflight;
@@ -124,11 +126,7 @@ export async function hasMxRecordsCached(domain: string): Promise<boolean> {
   });
   mxPending.set(key, query);
   const ok = await query;
-  if (!mxCache.has(key) && mxCache.size >= MX_CACHE_MAX) {
-    const oldest = mxCache.keys().next();
-    if (!oldest.done) mxCache.delete(oldest.value);
-  }
-  mxCache.set(key, { ok, at: Date.now() });
+  mxCache.set(key, ok, Date.now());
   return ok;
 }
 
