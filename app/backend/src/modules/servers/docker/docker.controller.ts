@@ -11,6 +11,11 @@ import { User } from '../../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../../common/types/user-payload.type';
 import { ThrottleProfile } from '../../../common/throttle/throttle-profile.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import {
+  MinRole,
+  WorkspaceRoleGuard,
+} from '../../../common/guards/workspace-role.guard';
+import { WorkspaceRole } from '@prisma/client';
 import { ServerIdsDto } from '../dto/server-ids.dto';
 import { ContainerActionDto } from './dto/container-action.dto';
 import { ContainerIdsDto } from './dto/container-ids.dto';
@@ -23,12 +28,13 @@ import { DockerService } from './docker.service';
  * хосту клиента, и writes не должны съедать бюджет чтений (и наоборот).
  */
 @Controller('workspaces/:workspaceId/servers/:serverId/docker')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
 export class DockerController {
   constructor(private readonly dockerService: DockerService) {}
 
   @Get('containers')
   @ThrottleProfile('dockerReads')
+  @MinRole(WorkspaceRole.MEMBER)
   list(
     @User() user: JwtUserPayload,
     @Param() params: ServerIdsDto,
@@ -44,6 +50,7 @@ export class DockerController {
 
   @Get('containers/:containerId')
   @ThrottleProfile('dockerReads')
+  @MinRole(WorkspaceRole.MEMBER)
   details(@User() user: JwtUserPayload, @Param() params: ContainerIdsDto) {
     return this.dockerService.details(
       user.userId,
@@ -55,6 +62,7 @@ export class DockerController {
 
   @Get('containers/:containerId/logs')
   @ThrottleProfile('dockerReads')
+  @MinRole(WorkspaceRole.MEMBER)
   logs(
     @User() user: JwtUserPayload,
     @Param() params: ContainerIdsDto,
@@ -71,6 +79,7 @@ export class DockerController {
 
   @Get('containers/:containerId/stats')
   @ThrottleProfile('dockerReads')
+  @MinRole(WorkspaceRole.MEMBER)
   stats(@User() user: JwtUserPayload, @Param() params: ContainerIdsDto) {
     return this.dockerService.stats(
       user.userId,
@@ -82,6 +91,7 @@ export class DockerController {
 
   @Patch('containers/:containerId')
   @ThrottleProfile('sshOps')
+  @MinRole(WorkspaceRole.OWNER)
   act(
     @User() user: JwtUserPayload,
     @Param() params: ContainerIdsDto,

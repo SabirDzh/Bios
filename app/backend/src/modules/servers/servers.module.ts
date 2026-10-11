@@ -9,6 +9,7 @@ import { AgentService } from './agent.service';
 import { CredentialCryptoService } from './credentials/credential-crypto.service';
 import { NodeSshRunner } from './ssh/node-ssh.runner';
 import { SSH_RUNNER } from './ssh/ssh-runner';
+import { WorkspaceRoleGuard } from '../../common/guards/workspace-role.guard';
 
 @Module({
   imports: [PrismaModule, WorkspacesModule, ComposeModule, GitModule],
@@ -18,6 +19,7 @@ import { SSH_RUNNER } from './ssh/ssh-runner';
     AgentService,
     CredentialCryptoService,
     { provide: SSH_RUNNER, useClass: NodeSshRunner },
+    WorkspaceRoleGuard,
   ],
   // DockerService обязан проходить тот же guard/политику/пин, что test и install:
   // ему нужны именно эти два провайдера, а не весь модуль.

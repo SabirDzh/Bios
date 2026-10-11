@@ -9,6 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  MinRole,
+  WorkspaceRoleGuard,
+} from '../../common/guards/workspace-role.guard';
+import { WorkspaceRole } from '@prisma/client';
 import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { CursorPaginationDto } from '../../common/dto/cursor-pagination.dto';
 import { User } from '../../common/decorators/user.decorator';
@@ -21,7 +26,7 @@ import { ServerIdsDto } from './dto/server-ids.dto';
 import { TestServerDto } from './dto/test-server.dto';
 
 @Controller('workspaces/:workspaceId/servers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
 export class ServersController {
   constructor(
     private readonly serversService: ServersService,
@@ -29,6 +34,7 @@ export class ServersController {
   ) {}
 
   @Post()
+  @MinRole(WorkspaceRole.OWNER)
   create(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,
@@ -38,6 +44,7 @@ export class ServersController {
   }
 
   @Get()
+  @MinRole(WorkspaceRole.MEMBER)
   findAll(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,
@@ -47,6 +54,7 @@ export class ServersController {
   }
 
   @Get(':serverId')
+  @MinRole(WorkspaceRole.MEMBER)
   findOne(@User() user: JwtUserPayload, @Param() params: ServerIdsDto) {
     return this.serversService.findOne(
       user.userId,
@@ -58,6 +66,7 @@ export class ServersController {
   @Post(':serverId/test')
   @HttpCode(200)
   @ThrottleProfile('sshOps')
+  @MinRole(WorkspaceRole.MEMBER)
   test(
     @User() user: JwtUserPayload,
     @Param() params: ServerIdsDto,
@@ -73,6 +82,7 @@ export class ServersController {
 
   @Post(':serverId/agent/install')
   @ThrottleProfile('sshOps')
+  @MinRole(WorkspaceRole.OWNER)
   installAgent(@User() user: JwtUserPayload, @Param() params: ServerIdsDto) {
     return this.agentService.install(
       user.userId,
@@ -83,6 +93,7 @@ export class ServersController {
 
   @Get(':serverId/agent')
   @ThrottleProfile('sshOps')
+  @MinRole(WorkspaceRole.MEMBER)
   agent(@User() user: JwtUserPayload, @Param() params: ServerIdsDto) {
     return this.agentService.status(
       user.userId,

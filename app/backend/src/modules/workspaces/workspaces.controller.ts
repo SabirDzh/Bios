@@ -9,6 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  MinRole,
+  WorkspaceRoleGuard,
+} from '../../common/guards/workspace-role.guard';
+import { WorkspaceRole } from '@prisma/client';
 import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorator';
 import { CursorPaginationDto } from '../../common/dto/cursor-pagination.dto';
 import { User } from '../../common/decorators/user.decorator';
@@ -20,7 +25,7 @@ import { InviteMemberDto } from './dto/invite-member.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 
 @Controller('workspaces')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
 export class WorkspacesController {
   constructor(private readonly workspacesService: WorkspacesService) {}
 
@@ -35,6 +40,7 @@ export class WorkspacesController {
   }
 
   @Get(':workspaceId')
+  @MinRole(WorkspaceRole.MEMBER)
   findOne(@User() user: JwtUserPayload, @Param() params: WorkspaceIdDto) {
     return this.workspacesService.findOneForUser(
       user.userId,
@@ -44,6 +50,7 @@ export class WorkspacesController {
 
   @Post(':workspaceId/invitations')
   @ThrottleProfile('invite')
+  @MinRole(WorkspaceRole.OWNER)
   invite(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,

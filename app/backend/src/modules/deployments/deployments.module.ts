@@ -9,6 +9,7 @@ import {
 } from './deployments.controller';
 import { DeployRunnerService } from './deploy-runner.service';
 import { DeploymentsService } from './deployments.service';
+import { WorkspaceRoleGuard } from '../../common/guards/workspace-role.guard';
 
 @Module({
   imports: [
@@ -20,6 +21,6 @@ import { DeploymentsService } from './deployments.service';
     ProjectsModule,
   ],
   controllers: [DeploymentsController, DeploymentController],
-  providers: [DeploymentsService, DeployRunnerService],
+  providers: [DeploymentsService, DeployRunnerService, WorkspaceRoleGuard],
 })
 export class DeploymentsModule {}

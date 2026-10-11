@@ -12,6 +12,11 @@ import { ThrottleProfile } from '../../common/throttle/throttle-profile.decorato
 import { User } from '../../common/decorators/user.decorator';
 import type { JwtUserPayload } from '../../common/types/user-payload.type';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  MinRole,
+  WorkspaceRoleGuard,
+} from '../../common/guards/workspace-role.guard';
+import { WorkspaceRole } from '@prisma/client';
 import { WorkspaceIdDto } from '../workspaces/dto/workspace-id.dto';
 import { DeploymentsService } from './deployments.service';
 import { CreateDeploymentDto } from './dto/create-deployment.dto';
@@ -19,13 +24,14 @@ import { DeploymentIdsDto } from './dto/deployment-ids.dto';
 import { ListDeploymentsQueryDto } from './dto/list-deployments-query.dto';
 
 @Controller('workspaces/:workspaceId/deployments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
 export class DeploymentsController {
   constructor(private readonly deploymentsService: DeploymentsService) {}
 
   @Post()
   @HttpCode(202)
   @ThrottleProfile('sshOps')
+  @MinRole(WorkspaceRole.OWNER)
   create(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,
@@ -35,6 +41,7 @@ export class DeploymentsController {
   }
 
   @Get()
+  @MinRole(WorkspaceRole.MEMBER)
   list(
     @User() user: JwtUserPayload,
     @Param() params: WorkspaceIdDto,
