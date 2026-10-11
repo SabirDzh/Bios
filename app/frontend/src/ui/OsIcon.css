@@ -1,0 +1,75 @@
+.os-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  /* Фолбэки без color-mix: база нейтральна, семейство лишь подкрашивает. */
+  background: var(--bg-hover);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  --os-c: var(--text-muted);
+}
+
+.os-icon[data-os='ubuntu'] {
+  --os-c: #e95420;
+}
+.os-icon[data-os='debian'] {
+  --os-c: #d70a53;
+}
+.os-icon[data-os='kali'] {
+  --os-c: #557c94;
+}
+.os-icon[data-os='rhel'] {
+  --os-c: #ee0000;
+}
+.os-icon[data-os='centos'] {
+  --os-c: #932279;
+}
+.os-icon[data-os='fedora'] {
+  --os-c: #51a2da;
+}
+.os-icon[data-os='rocky'] {
+  --os-c: #10b981;
+}
+.os-icon[data-os='alma'] {
+  --os-c: #2271b2;
+}
+.os-icon[data-os='suse'] {
+  --os-c: #73ba25;
+}
+.os-icon[data-os='arch'] {
+  --os-c: #1793d1;
+}
+.os-icon[data-os='manjaro'] {
+  --os-c: #35bfa4;
+}
+.os-icon[data-os='alpine'] {
+  --os-c: #0d597f;
+}
+.os-icon[data-os='gentoo'] {
+  --os-c: #54487a;
+}
+.os-icon[data-os='linux'],
+.os-icon[data-os='other'],
+.os-icon[data-os='unknown'] {
+  --os-c: var(--text-muted);
+}
+
+/* Тинт семейства: тише, чем у статусов, — бейдж не спорит с ними за внимание. */
+.os-icon {
+  background: color-mix(in srgb, var(--os-c) 14%, transparent);
+  border-color: color-mix(in srgb, var(--os-c) 32%, transparent);
+  color: color-mix(in srgb, var(--os-c) 72%, var(--text-strong));
+}
+
+.os-icon[data-os='unknown'] {
+  border-style: dashed;
+}

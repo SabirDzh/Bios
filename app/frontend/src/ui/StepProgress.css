@@ -1,0 +1,58 @@
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* Коннектор входит в шаг и показывает пройденный путь: у выполненного
+   шага он зелёный, у остальных — структурный серый. */
+.steps-item + .steps-item::before {
+  content: '';
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin: 0 6px;
+  background: var(--border);
+}
+
+.steps-item[data-state='done']::before {
+  background: var(--ok);
+  opacity: 0.5;
+}
+
+.steps-icon {
+  display: inline-flex;
+}
+
+.steps-item[data-state='future'] {
+  color: var(--text-muted);
+}
+
+.steps-item[data-state='done'] .steps-icon {
+  color: var(--ok);
+}
+
+.steps-item[data-tone='info'] {
+  color: var(--info);
+}
+
+.steps-item[data-tone='danger'] {
+  color: var(--danger);
+}
+
+.steps-item[data-tone='warn'] {
+  color: var(--warn);
+}

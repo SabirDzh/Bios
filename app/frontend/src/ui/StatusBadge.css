@@ -1,0 +1,42 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* Компактный вариант: квадрат под глиф; подпись — в тултипе и aria-label. */
+.status-badge-icon {
+  justify-content: center;
+  width: 20px;
+  padding: 0;
+}
+
+.status-badge-ok {
+  background: var(--ok-muted);
+  color: var(--ok);
+}
+
+.status-badge-warn {
+  background: var(--warn-muted);
+  color: var(--warn);
+}
+
+.status-badge-danger {
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
+.status-badge-info {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.status-badge-neutral {
+  background: var(--neutral-muted);
+  color: var(--neutral);
+}

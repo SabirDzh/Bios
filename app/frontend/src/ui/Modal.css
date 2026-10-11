@@ -7,7 +7,7 @@
 }
 
 .modal::backdrop {
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
 }
 
 .modal-panel {
@@ -20,6 +20,13 @@
   border-radius: var(--radius-md);
   background: var(--bg-raised);
   box-shadow: var(--shadow-pop);
+}
+
+/* Мастера с полями в строку (хост + порт, приватный ключ): панель шире
+   контента, поэтому нужна реальная width, а не только max-width. */
+.modal.modal-wide .modal-panel {
+  width: min(640px, 92vw);
+  max-width: none;
 }
 
 .modal-head {

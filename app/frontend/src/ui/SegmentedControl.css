@@ -1,0 +1,66 @@
+.segmented-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* У fieldset нет flex-контекста для legend — подпись выравнивается сама. */
+.segmented-field .field-label {
+  padding: 0;
+}
+
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.segmented-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  color: var(--text);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast),
+    color var(--dur-fast);
+}
+
+.segmented-option + .segmented-option {
+  border-left: 1px solid var(--border);
+}
+
+.segmented-option:hover {
+  color: var(--text-strong);
+}
+
+.segmented-option[data-checked='true'] {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+/* Radio невидим, но остаётся фокусируемым: рамка — на сегменте. */
+.segmented-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.segmented-option:has(.segmented-input:focus-visible) {
+  outline: 2px solid var(--focus-border);
+  outline-offset: -2px;
+}

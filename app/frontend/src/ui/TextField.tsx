@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { InputHTMLAttributes, ReactNode } from 'react';
+import type { InputHTMLAttributes, ReactNode, Ref } from 'react';
 import './TextField.css';
 
 interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -8,14 +8,19 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: ReactNode;
   error?: string | null;
+  /** Иконка у левого края поля (поиск и т.п.); класс `.field-leading`. */
+  leading?: ReactNode;
   /** Кнопка/иконка внутри поля справа (глазок пароля и т.п.). */
   trailing?: ReactNode;
+  /** React 19: ref — обычный prop, уходит на DOM-input (фокус из страницы). */
+  ref?: Ref<HTMLInputElement>;
 }
 
 export function TextField({
   label,
   hint,
   error,
+  leading,
   trailing,
   id,
   className,
@@ -34,10 +39,15 @@ export function TextField({
         </label>
       )}
       <div
-        className={['field-control', trailing ? 'has-trailing' : '']
+        className={[
+          'field-control',
+          leading ? 'has-leading' : '',
+          trailing ? 'has-trailing' : '',
+        ]
           .filter(Boolean)
           .join(' ')}
       >
+        {leading}
         <input
           id={inputId}
           className={error ? 'field-input field-input-error' : 'field-input'}

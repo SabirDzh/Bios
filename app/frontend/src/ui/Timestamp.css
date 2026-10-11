@@ -1,0 +1,7 @@
+.timestamp {
+  white-space: nowrap;
+}
+
+.timestamp-missing {
+  color: var(--text-muted);
+}

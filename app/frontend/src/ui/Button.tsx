@@ -1,8 +1,8 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { Loader2 } from 'lucide-react';
 import './Button.css';
 
-type Variant = 'primary' | 'default' | 'ghost' | 'danger';
+type Variant = 'primary' | 'default' | 'ghost' | 'danger' | 'danger-solid';
 type Size = 'md' | 'sm';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -10,6 +10,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
   loading?: boolean;
   icon?: ReactNode;
+  /** React 19: ref — обычный prop, пробрасывается на DOM-кнопку. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({

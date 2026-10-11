@@ -50,6 +50,24 @@
   min-width: 0;
 }
 
+.field-control.has-leading .field-input {
+  padding-left: 30px;
+}
+
+/* Фокусная рамка растёт на пиксель — текст не должен скакать (как у голого поля). */
+.field-control.has-leading .field-input:focus-visible {
+  padding-left: 29px;
+}
+
+.field-leading {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
 .field-control .field-input {
   flex: 1;
   min-width: 0;
@@ -110,4 +128,43 @@
 .field-error {
   font-size: var(--text-sm);
   color: var(--danger);
+}
+
+.field-select-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.field-select {
+  appearance: none;
+  width: 100%;
+  padding-right: 28px;
+  cursor: pointer;
+}
+
+.field-select:disabled {
+  cursor: default;
+}
+
+.field-select-caret {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.field-textarea {
+  height: auto;
+  min-height: 96px;
+  padding: 8px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.field-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }

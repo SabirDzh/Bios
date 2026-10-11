@@ -6,6 +6,7 @@
   --space-5: 24px;
   --space-6: 32px;
 
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
 
@@ -13,6 +14,14 @@
      transitions в base.css и TextField.css. */
   --dur-fast: 120ms;
   --dur-pop: 160ms;
+
+  --dur-fast: 120ms;
+  --dur-pop: 160ms;
+
+  --z-sticky: 10;
+  --z-pop: 30;
+  --z-overlay: 35;
+  --z-modal: 40;
 
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -24,14 +33,17 @@
   --text-lg: 20px;
 
   --leading: 1.45;
-  --row-h: 34px;
+  --row-h: 32px;
+  --toolbar-h: 40px;
   --sidebar-w: 232px;
   --topbar-h: 48px;
+  /* Шторка деталей: её ширина — и отступ, который оболочка отдаёт справа. */
+  --drawer-w: min(360px, 92vw);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #101214;
+  --bg: #000000;
   --bg-raised: #17191c;
   --bg-inset: #0b0d0f;
   --bg-hover: #1d2024;
@@ -49,6 +61,8 @@
   --ok: #3fb950;
   --warn: #d29922;
   --danger: #f85149;
+  --danger-hover: #e0483f;
+  --on-danger: #0b1220;
   --info: #58a6ff;
   --neutral: #8b949e;
   --ok-muted: rgba(63, 185, 80, 0.14);
@@ -56,6 +70,7 @@
   --danger-muted: rgba(248, 81, 73, 0.14);
   --neutral-muted: rgba(139, 148, 158, 0.14);
   --info-muted: rgba(88, 166, 255, 0.14);
+  --overlay: rgba(0, 0, 0, 0.5);
   --focus: 0 0 0 2px rgba(76, 154, 255, 0.55);
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
@@ -80,6 +95,8 @@
   --ok: #1a7f37;
   --warn: #9a6700;
   --danger: #cf222e;
+  --danger-hover: #b91c28;
+  --on-danger: #ffffff;
   --info: #0969da;
   --neutral: #6b7278;
   --ok-muted: rgba(26, 127, 55, 0.1);
@@ -87,6 +104,7 @@
   --danger-muted: rgba(207, 34, 46, 0.1);
   --neutral-muted: rgba(107, 114, 120, 0.12);
   --info-muted: rgba(9, 105, 218, 0.1);
+  --overlay: rgba(20, 24, 28, 0.35);
   --focus: 0 0 0 2px rgba(11, 98, 208, 0.45);
   --shadow-pop: 0 8px 28px rgba(20, 24, 28, 0.16);
 }

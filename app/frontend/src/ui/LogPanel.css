@@ -1,0 +1,70 @@
+.log-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.log-size {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.log-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.log-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre;
+}
+
+.log-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Нажатое состояние «Переноса»: aria-pressed — источник правды, не класс. */
+.log-panel .btn[aria-pressed='true'] {
+  background: var(--accent-muted);
+  color: var(--accent);
+}

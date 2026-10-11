@@ -52,3 +52,42 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.table th.th-sort {
+  padding: 0;
+}
+
+.th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.th-sort-btn:hover {
+  color: var(--text);
+}
+
+.th-sort-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.th-sort-btn svg {
+  flex: none;
+}
+
+.th-sort-btn .th-sort-idle {
+  opacity: 0.5;
+}
+
+.table th.th-sort.numeric .th-sort-btn {
+  justify-content: flex-end;
+}

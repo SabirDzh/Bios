@@ -29,3 +29,13 @@
   gap: var(--space-3);
   padding-top: var(--space-2);
 }
+
+.kit-actions {
+  width: 44px;
+  text-align: center;
+}
+
+/* Витрина: журналу нужна высота, в приложении её задаёт страница. */
+.kit-log {
+  height: 180px;
+}

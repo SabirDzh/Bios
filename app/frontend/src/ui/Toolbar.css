@@ -1,0 +1,24 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  height: var(--toolbar-h);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

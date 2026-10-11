@@ -9,9 +9,25 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Широкая панель: мастера с полями в строку (сервер: хост + порт, ключ). */
+  wide?: boolean;
+  /**
+   * false — модалка закрывается только явным действием внутри (кнопка):
+   * крестик не рисуется, клик по подложке и Esc не закрывают. Для форм, где
+   * случайное закрытие стоит введённых данных.
+   */
+  dismissable?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  wide = false,
+  dismissable = true,
+}: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -24,24 +40,33 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={wide ? 'modal modal-wide' : 'modal'}
       aria-label={title}
       onClose={onClose}
+      onCancel={
+        dismissable
+          ? undefined
+          : (event) => {
+              event.preventDefault();
+            }
+      }
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        if (dismissable && event.target === ref.current) onClose();
       }}
     >
       <div className="modal-panel">
         <div className="modal-head">
           <h2>{title}</h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Закрыть"
-          >
-            <X size={14} aria-hidden />
-          </button>
+          {dismissable && (
+            <button
+              type="button"
+              className="modal-close"
+              onClick={onClose}
+              aria-label="Закрыть"
+            >
+              <X size={14} aria-hidden />
+            </button>
+          )}
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

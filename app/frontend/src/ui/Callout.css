@@ -1,0 +1,56 @@
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--neutral);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-muted);
+  color: var(--text);
+  font-size: var(--text-base);
+}
+
+.callout-icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.callout-body {
+  min-width: 0;
+}
+
+.callout-ok {
+  border-left-color: var(--ok);
+  background: var(--ok-muted);
+}
+
+.callout-ok .callout-icon {
+  color: var(--ok);
+}
+
+.callout-info {
+  border-left-color: var(--info);
+  background: var(--info-muted);
+}
+
+.callout-info .callout-icon {
+  color: var(--info);
+}
+
+.callout-warn {
+  border-left-color: var(--warn);
+  background: var(--warn-muted);
+}
+
+.callout-warn .callout-icon {
+  color: var(--warn);
+}
+
+.callout-danger {
+  border-left-color: var(--danger);
+  background: var(--danger-muted);
+}
+
+.callout-danger .callout-icon {
+  color: var(--danger);
+}
