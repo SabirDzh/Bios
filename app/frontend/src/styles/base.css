@@ -10,6 +10,17 @@ body,
   height: 100%;
 }
 
+/* macOS-трекпад тянет страницу вбок с резиновым отскоком (особенно заметно
+   на auth-формах). overscroll-behavior гасит именно отскок — сам скролл
+   и горизонтальные ленты таблиц (.table-wrap) работают как раньше. */
+html {
+  overscroll-behavior: none;
+}
+
+body {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -69,7 +80,7 @@ samp {
 }
 
 ::selection {
-  background: var(--accent-muted);
+  background: color-mix(in srgb, var(--focus-border) 50%, transparent);
 }
 
 * {
