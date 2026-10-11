@@ -30,11 +30,13 @@ GET api/v1/worksapces/:worksapce_id/projects/:project_id - получить пр
 PATCH api/v1/workspaces/:workspace_id/projects/:project_id - обновить проект в рабочем пространстве 
 DELETE api/v1/workspaces/:workspace_id/projects/:project_id - удалить проект из рабочего пространства 
 GET api/v1/workspaces/:workspace_id/servers - получить список серверов рабочего пространства (cursor-пагинация: ?cursor&limit → { items, nextCursor })
+GET api/v1/workspaces/:workspace_id/servers/search - поиск серверов по имени и хосту через Meilisearch (?q → непустой запрос до 64 символов, ?limit → 1..100, по умолчанию 50; ответ { items, total }; движок недоступен → 424 SEARCH_UNAVAILABLE)
 POST api/v1/workspaces/:workspace_id/servers - создать сервер в рабочем пространстве 
 GET api/v1/workspaces/:workspace_id/servers/:server_id - получить сервер 
 PATCH api/v1/workspaces/:workspace_id/servers/:server_id - изменить сервер 
 DELETE api/v1/workspaces/:workspace_id/servers/:server_id - удалить сервер 
-POST api/v1/workspaces/:workspace_id/servers/:server_id/test - проверить ssh-подключение 
+POST api/v1/workspaces/:workspace_id/servers/:server_id/test - проверить ssh-подключение (probe host key → docker version → проба ОС: hostnamectl с фолбэком на uname -a; распознанный osName сохраняется в сервере и возвращается в ответе; сбой пробы ОС вердикт не меняет) 
+POST api/v1/workspaces/:workspace_id/servers/test-connection - проверить соединение по данным формы мастера без создания сервера (те же поля, что у create, без name; TOFU как у test; serverId=null в ответе; подтверждённый hostKeyFingerprint мастер передаёт в create) 
 POST api/v1/workspaces/:workspace_id/servers/:server_id/agent/install - установить агента на сервер 
 GET api/v1/workspaces/:workspace_id/servers/:server_id/agent - просмотреть информацию о агенте 
 POST api/v1/workspaces/:workspace_id/servers/:server_id/agent/upgrade - обновить агента 

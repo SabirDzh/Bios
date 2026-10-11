@@ -63,16 +63,19 @@ TTL приглашения — `INVITATIONS_TTL_SEC`, default 86400 (1 сутк�
 ### Servers
 | Фича | Endpoint | Ответ | Роли | Статусы |
 |---|---|---|---|---|
-| Создать | `POST workspaces/:id/servers` | `{name, host, port?, sshUsername, authType: PASSWORD\|KEY, sshPassword?\|sshPrivateKey?}` → 201 | OWNER | 400 (порт вне `SSH_ALLOWED_PORTS` — деф. 22; ключ не парсится ssh2), 409 (имя/отпечаток занят), 429 |
+| Создать | `POST workspaces/:id/servers` | `{name, host, port?, sshUsername, authType: PASSWORD\|KEY, sshPassword?\|sshPrivateKey?, hostKeyFingerprint?}` → 201 | OWNER | 400 (порт вне `SSH_ALLOWED_PORTS` — деф. 22; ключ не парсится ssh2), 409 (имя/отпечаток занят), 429 |
 | Список | `GET …/servers?cursor&limit` | `{items, nextCursor}` | member | 404 |
 | Детали | `GET …/servers/:id` | ServerResponse | member | 404 |
 | Проверка SSH | `POST …/servers/:id/test` | `{trustHostKey?}` → 200 `{reachable, trustRequired, status, latencyMs, dockerVersion, dockerErrorCode, errorCode, hostKeyFingerprint, checkedAt}` | member | 409 (пин не совпал), 424 (SSH-проблема), 429 (sshOps) |
+| Тест из мастера | `POST …/servers/test-connection` | те же поля, что у create, без `name` (+`trustHostKey?`) → тот же ответ, `serverId: null`; БД не трогается | OWNER | 400 (порт/ключ), 409 (пин не совпал), 424, 429 |
 | Статус агента | `GET …/servers/:id/agent` | `{status: NOT_INSTALLED\|FAILED\|STALE\|ACTIVE, version, installedAt, lastHeartbeatAt, errorCode, …}` | member | 424, 429 |
 | Установка агента | `POST …/servers/:id/agent/install` | `{outcome: INSTALLED\|ALREADY_ACTIVE, agent}` | OWNER | 424 (errorCode из префлайта), 429 |
 
 TOFU-поток: первый `test` без пина → `trustRequired:true` + отпечаток →
 подтверждение `trustHostKey=<отпечаток>` → пин + docker-версия. `errorCode` —
 словарь `SshErrorCode` (26 значений, см. план). Статусы сервера: PENDING / ONLINE / OFFLINE.
+Мастер создания повторяет тот же TOFU через `test-connection` и передаёт
+подтверждённый отпечаток в `hostKeyFingerprint` у create — сервер рождается доверенным.
 
 Гэпы: PATCH/DELETE сервера, upgrade/delete агента, история подключений
 (`connections`). Секреты (пароль/ключ) не читаются никогда — ни одного эндпоинта.
