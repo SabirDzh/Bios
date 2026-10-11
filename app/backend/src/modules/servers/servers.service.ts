@@ -36,6 +36,7 @@ import type { TestServerDto } from './dto/test-server.dto';
 import {
   CursorPage,
   CursorPaginationDto,
+  DEFAULT_PAGE_LIMIT,
   decodeCursorOrThrow,
   encodeCursor,
   takePage,
@@ -179,7 +180,7 @@ export class ServersService {
   ): Promise<CursorPage<ServerResponse>> {
     await this.workspaces.requireMembership(userId, workspaceId, MEMBER_ROLES);
     // Keyset (createdAt, id) — тот же паттерн, что findAllForUser.
-    const limit = q.limit ?? 20;
+    const limit = q.limit ?? DEFAULT_PAGE_LIMIT;
     const cursor = q.cursor ? decodeCursorOrThrow(q.cursor) : null;
     const cursorTs = cursor ? new Date(cursor.ts) : null;
     const servers = await this.prisma.server.findMany({

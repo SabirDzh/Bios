@@ -16,6 +16,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import {
   CursorPage,
   CursorPaginationDto,
+  DEFAULT_PAGE_LIMIT,
   decodeCursorOrThrow,
   encodeCursor,
   takePage,
@@ -99,7 +100,7 @@ export class WorkspacesService {
   ): Promise<CursorPage<WorkspaceResponse>> {
     // Курсорная пагинация keyset (ts, id): стабильный обход без дублей
     // при конкурентных вступлениях; id — тайбрейк неуникального joinedAt.
-    const limit = q.limit ?? 20;
+    const limit = q.limit ?? DEFAULT_PAGE_LIMIT;
     const cursor = q.cursor ? decodeCursorOrThrow(q.cursor) : null;
     const cursorTs = cursor ? new Date(cursor.ts) : null;
     const memberships = await this.prisma.workspaceMember.findMany({

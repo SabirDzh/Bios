@@ -29,7 +29,7 @@ export class CursorPaginationDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 20;
+  limit?: number = DEFAULT_PAGE_LIMIT;
 }
 
 export interface CursorPage<T> {
@@ -37,6 +37,12 @@ export interface CursorPage<T> {
   /** null — последняя страница. */
   nextCursor: string | null;
 }
+
+/**
+ * Дефолтный размер страницы — один источник для DTO и сервисов
+ * (сервисы вызывают напрямую в спеках, мимо ValidationPipe).
+ */
+export const DEFAULT_PAGE_LIMIT = 20;
 
 export interface DecodedCursor {
   ts: string;

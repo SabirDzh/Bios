@@ -26,7 +26,10 @@ import {
 } from '../servers.service';
 import type { WorkspaceRole } from '@prisma/client';
 import type { ContainerActionDto } from './dto/container-action.dto';
-import type { ContainerLogQueryDto } from './dto/container-log-query.dto';
+import {
+  LOGS_DEFAULT_TAIL,
+  type ContainerLogQueryDto,
+} from './dto/container-log-query.dto';
 import { classifyDialFailure } from './docker-readiness';
 import {
   hasTty,
@@ -40,9 +43,6 @@ import {
   type ContainerStats,
   type ContainerSummary,
 } from './container.types';
-
-/** Значение `tail`, если запрос его не задал: экран лога не бесконечен. */
-const LOGS_DEFAULT_TAIL = 200;
 
 /** Ошибка docker-modem: HTTP-статус демона живёт в statusCode. */
 interface DockerApiError {

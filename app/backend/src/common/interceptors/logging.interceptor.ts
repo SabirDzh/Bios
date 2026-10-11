@@ -38,7 +38,10 @@ export class LoggingInterceptor implements NestInterceptor {
         const response = context.switchToHttp().getResponse<Response>();
         const ms = Date.now() - start;
         successCounter += 1;
-        if (ms >= this.cfg.slowMs || successCounter % this.cfg.sampleEvery === 0) {
+        if (
+          ms >= this.cfg.slowMs ||
+          successCounter % this.cfg.sampleEvery === 0
+        ) {
           console.log(
             `${request.method} ${request.url} ${response.statusCode} +${ms}ms`,
           );
